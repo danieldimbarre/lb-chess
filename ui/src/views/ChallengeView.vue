@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import TopBar from '../components/TopBar.vue';
 import Avatar from '../components/Avatar.vue';
@@ -54,7 +55,7 @@ async function send() {
   sending.value = false;
   if (!res?.ok) return showError(res?.error);
   if (res.gameId) return; // crossed challenge auto-accepted, game:start push navigates
-  toast(`Challenge sent to ${res.challenge.to.username}`, 'success');
+  toast(t('challenge.sent', { name: res.challenge.to.username }), 'success');
   query.value = '';
   selected.value = null;
 }
@@ -74,12 +75,12 @@ const canSend = computed(() => !!(selected.value ?? query.value.trim()) && !send
 
 <template>
   <div class="flex h-full flex-col bg-bg pt-(--safe-top)">
-    <TopBar title="Play a Friend" />
+    <TopBar :title="t('challenge.title')" />
 
     <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
       <!-- incoming -->
       <section v-if="session.incoming.length" class="mb-4">
-        <div class="pb-2 text-[0.72rem] font-bold uppercase tracking-wider text-muted">Incoming</div>
+        <div class="pb-2 text-[0.72rem] font-bold uppercase tracking-wider text-muted">{{ t('challenge.incoming') }}</div>
         <TransitionGroup name="list" tag="div" class="flex flex-col gap-2">
           <div v-for="c in session.incoming" :key="c.id" class="card flex items-center gap-3 p-3">
             <Avatar :name="c.from.username" :size="40" />
@@ -87,18 +88,18 @@ const canSend = computed(() => !!(selected.value ?? query.value.trim()) && !send
               <div class="truncate font-bold">{{ c.from.username }}</div>
               <div class="text-[0.8rem] font-semibold text-ink-2">{{ tcLabel(c.tc) }} · {{ left(c.expiresAt) }}s</div>
             </div>
-            <button class="btn btn-secondary size-10 p-0!" aria-label="Decline" @click="declineChallenge(c)"><Icon name="x" :size="20" :stroke="2.8" /></button>
-            <button class="btn btn-primary h-10 px-4" @click="acceptChallenge(c)">Accept</button>
+            <button class="btn btn-secondary size-10 p-0!" :aria-label="t('common.decline')" @click="declineChallenge(c)"><Icon name="x" :size="20" :stroke="2.8" /></button>
+            <button class="btn btn-primary h-10 px-4" @click="acceptChallenge(c)">{{ t('common.accept') }}</button>
           </div>
         </TransitionGroup>
       </section>
 
       <!-- new challenge -->
       <section class="card p-4">
-        <div class="font-display text-[1.05rem] font-extrabold">New challenge</div>
+        <div class="font-display text-[1.05rem] font-extrabold">{{ t('challenge.new') }}</div>
         <div class="relative mt-3">
           <Icon name="search" :size="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input v-model="query" class="field pl-10!" placeholder="Search username" spellcheck="false" autocomplete="off" maxlength="16" />
+          <input v-model="query" class="field pl-10!" :placeholder="t('challenge.searchPlaceholder')" spellcheck="false" autocomplete="off" maxlength="16" />
           <div v-if="results.length && !selected" class="absolute inset-x-0 top-[calc(100%+6px)] z-10 overflow-hidden rounded-xl bg-surface-2 shadow-[0_12px_32px_rgba(0,0,0,.4)]">
             <button v-for="p in results" :key="p.username" class="hover-row flex w-full items-center gap-3 px-3 py-2.5 text-left" @click="choose(p)">
               <Avatar :name="p.username" :size="30" />
@@ -114,10 +115,10 @@ const canSend = computed(() => !!(selected.value ?? query.value.trim()) && !send
             <div class="min-w-0 flex-1 leading-tight">
               <div class="truncate font-bold">{{ selected.username }}</div>
               <div class="text-[0.8rem] font-semibold" :class="selected.playing ? 'text-gold' : selected.online ? 'text-green' : 'text-muted'">
-                {{ selected.playing ? 'Playing a game' : selected.online ? 'Online' : 'Offline' }}
+                {{ selected.playing ? t('challenge.playing') : selected.online ? t('common.online') : t('common.offline') }}
               </div>
             </div>
-            <button class="tap text-[0.8rem] font-bold text-ink-2" @click="push('profile', { username: selected.username })">Profile</button>
+            <button class="tap text-[0.8rem] font-bold text-ink-2" @click="push('profile', { username: selected.username })">{{ t('challenge.profile') }}</button>
           </div>
         </Transition>
 
@@ -133,7 +134,7 @@ const canSend = computed(() => !!(selected.value ?? query.value.trim()) && !send
             :key="c"
             class="tap flex h-12 flex-1 items-center justify-center rounded-lg"
             :class="color === c ? 'bg-surface-3 ring-2 ring-green' : 'bg-surface-2'"
-            :aria-label="c === 'w' ? 'Play as white' : c === 'b' ? 'Play as black' : 'Random color'"
+            :aria-label="c === 'w' ? t('challenge.playWhite') : c === 'b' ? t('challenge.playBlack') : t('challenge.randomColor')"
             @click="color = c"
           >
             <span v-if="c !== 'random'" class="size-8 bg-contain bg-no-repeat" :style="{ backgroundImage: `url(${pieceUrl(c, 'k')})` }" />
@@ -144,12 +145,12 @@ const canSend = computed(() => !!(selected.value ?? query.value.trim()) && !send
           </button>
         </div>
 
-        <button class="btn btn-primary mt-4 h-13 w-full text-lg" :disabled="!canSend" @click="send">{{ sending ? 'Sending…' : 'Send Challenge' }}</button>
+        <button class="btn btn-primary mt-4 h-13 w-full text-lg" :disabled="!canSend" @click="send">{{ sending ? t('challenge.sending') : t('challenge.send') }}</button>
       </section>
 
       <!-- outgoing -->
       <section v-if="session.outgoing.length" class="mt-4">
-        <div class="pb-2 text-[0.72rem] font-bold uppercase tracking-wider text-muted">Waiting for reply</div>
+        <div class="pb-2 text-[0.72rem] font-bold uppercase tracking-wider text-muted">{{ t('challenge.waiting') }}</div>
         <TransitionGroup name="list" tag="div" class="flex flex-col gap-2">
           <div v-for="c in session.outgoing" :key="c.id" class="card flex items-center gap-3 p-3">
             <Avatar :name="c.to.username" :size="40" />
@@ -160,7 +161,7 @@ const canSend = computed(() => !!(selected.value ?? query.value.trim()) && !send
                 {{ tcLabel(c.tc) }} · {{ left(c.expiresAt) }}s
               </div>
             </div>
-            <button class="btn btn-secondary h-10 px-3 text-sm" @click="cancelChallenge(c)">Cancel</button>
+            <button class="btn btn-secondary h-10 px-3 text-sm" @click="cancelChallenge(c)">{{ t('common.cancel') }}</button>
           </div>
         </TransitionGroup>
       </section>

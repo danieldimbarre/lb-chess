@@ -3,6 +3,9 @@ import { reactive, watch } from 'vue';
 export type BoardThemeId = 'green' | 'brown' | 'blue' | 'purple' | 'grey' | 'walnut';
 
 export interface Settings {
+  /** 'phone' follows the LB Phone setting. */
+  themeMode: 'phone' | 'dark' | 'light';
+  language: 'phone' | 'en' | 'pt';
   boardTheme: BoardThemeId;
   showLegal: boolean;
   coordinates: boolean;
@@ -25,6 +28,8 @@ export const boardThemes: Record<BoardThemeId, { name: string; light: string; da
 };
 
 const defaults: Settings = {
+  themeMode: 'phone',
+  language: 'phone',
   boardTheme: 'green',
   showLegal: true,
   coordinates: true,

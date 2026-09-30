@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { computed, ref, shallowRef } from 'vue';
 import Board from './Board.vue';
 import Icon from './Icon.vue';
@@ -90,13 +91,13 @@ const isTool = (color: Color, role: Role) => typeof tool.value === 'object' && t
 <template>
   <div class="flex h-full flex-col">
     <div class="flex items-center gap-2 px-3 pb-2">
-      <button class="btn btn-secondary h-9 px-3 text-sm" @click="loadFen(START_FEN)">Start</button>
-      <button class="btn btn-secondary h-9 px-3 text-sm" @click="setBoard(new Map())">Clear</button>
-      <button class="btn btn-secondary h-9 px-3" aria-label="Flip" @click="orientation = orientation === 'w' ? 'b' : 'w'">
+      <button class="btn btn-secondary h-9 px-3 text-sm" @click="loadFen(START_FEN)">{{ t('editor.start') }}</button>
+      <button class="btn btn-secondary h-9 px-3 text-sm" @click="setBoard(new Map())">{{ t('editor.clear') }}</button>
+      <button class="btn btn-secondary h-9 px-3" :aria-label="t('editor.flip')" @click="orientation = orientation === 'w' ? 'b' : 'w'">
         <Icon name="flip" :size="18" />
       </button>
       <div class="flex-1" />
-      <button class="btn btn-ghost h-9 px-2 text-sm" @click="emit('cancel')">Cancel</button>
+      <button class="btn btn-ghost h-9 px-2 text-sm" @click="emit('cancel')">{{ t('common.cancel') }}</button>
     </div>
 
     <div class="flex gap-1 px-2 pb-1.5">
@@ -111,7 +112,7 @@ const isTool = (color: Color, role: Role) => typeof tool.value === 'object' && t
       <button
         class="tap flex aspect-square flex-1 items-center justify-center rounded-md"
         :class="tool === 'erase' ? 'bg-[#e2412f] text-white' : 'bg-surface text-ink-2'"
-        aria-label="Eraser"
+        :aria-label="t('editor.eraser')"
         @click="tool = tool === 'erase' ? null : 'erase'"
       >
         <Icon name="trash" :size="20" />
@@ -132,7 +133,7 @@ const isTool = (color: Color, role: Role) => typeof tool.value === 'object' && t
       <button
         class="tap flex aspect-square flex-1 items-center justify-center rounded-md text-ink-2"
         :class="tool === null ? 'bg-green/70 text-white' : 'bg-surface'"
-        aria-label="Move pieces"
+        :aria-label="t('editor.movePieces')"
         @click="tool = null"
       >
         <Icon name="check" :size="20" />
@@ -141,23 +142,23 @@ const isTool = (color: Color, role: Role) => typeof tool.value === 'object' && t
 
     <div class="min-h-0 flex-1 overflow-y-auto px-4 pt-3">
       <div class="flex items-center justify-between py-1.5">
-        <span class="font-semibold">Side to move</span>
+        <span class="font-semibold">{{ t('editor.sideToMove') }}</span>
         <div class="flex overflow-hidden rounded-lg bg-surface text-sm font-bold">
-          <button class="px-3 py-1.5" :class="turn === 'w' ? 'bg-surface-3 text-ink' : 'text-muted'" @click="turn = 'w'">White</button>
-          <button class="px-3 py-1.5" :class="turn === 'b' ? 'bg-surface-3 text-ink' : 'text-muted'" @click="turn = 'b'">Black</button>
+          <button class="px-3 py-1.5" :class="turn === 'w' ? 'bg-surface-3 text-ink' : 'text-muted'" @click="turn = 'w'">{{ t('common.white') }}</button>
+          <button class="px-3 py-1.5" :class="turn === 'b' ? 'bg-surface-3 text-ink' : 'text-muted'" @click="turn = 'b'">{{ t('common.black') }}</button>
         </div>
       </div>
       <div class="grid grid-cols-2 gap-x-4 gap-y-2 py-2 text-[0.88rem]">
-        <label v-for="(label, k) in { K: 'White O-O', Q: 'White O-O-O', k: 'Black O-O', q: 'Black O-O-O' }" :key="k" class="flex items-center justify-between gap-2" :class="castleAvail[k] ? '' : 'opacity-40'">
+        <label v-for="(label, k) in { K: t('editor.whiteShort'), Q: t('editor.whiteLong'), k: t('editor.blackShort'), q: t('editor.blackLong') }" :key="k" class="flex items-center justify-between gap-2" :class="castleAvail[k] ? '' : 'opacity-40'">
           <span class="font-semibold text-ink-2">{{ label }}</span>
           <Toggle v-model="castle[k]" />
         </label>
       </div>
       <div class="flex gap-2 py-2">
-        <input v-model="fenInput" class="field py-2! text-[0.8rem]!" placeholder="Paste FEN" spellcheck="false" />
-        <button class="btn btn-secondary h-10 shrink-0 px-3 text-sm" :disabled="!fenInput.trim()" @click="loadFen(fenInput.trim())">Load</button>
+        <input v-model="fenInput" class="field py-2! text-[0.8rem]!" :placeholder="t('editor.pasteFen')" spellcheck="false" />
+        <button class="btn btn-secondary h-10 shrink-0 px-3 text-sm" :disabled="!fenInput.trim()" @click="loadFen(fenInput.trim())">{{ t('common.load') }}</button>
       </div>
-      <button class="btn btn-primary mb-3 mt-1 h-12 w-full text-lg" @click="done">Analyze position</button>
+      <button class="btn btn-primary mb-3 mt-1 h-12 w-full text-lg" @click="done">{{ t('editor.analyze') }}</button>
     </div>
   </div>
 </template>

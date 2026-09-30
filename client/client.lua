@@ -4,14 +4,28 @@ local identifier = Config.identifier
 
 local requestId = 0
 local pending = {}
+local registeredLocale
 
 -- Phone <-> app registration ------------------------------------------------
 
+-- "pt-br" / "pt-pt" -> "pt", everything else uses the English store text.
+local function phoneLocale()
+    local ok, settings = pcall(function()
+        return exports["lb-phone"]:GetSettings()
+    end)
+    local locale = ok and type(settings) == "table" and settings.locale or Config.defaultLocale or "en"
+    return tostring(locale):lower():sub(1, 2) == "pt" and "pt" or "en"
+end
+
 local function addApp()
+    local locale = phoneLocale()
+    local store = (Config.appStore or {})[locale] or {}
+    registeredLocale = locale
+
     local added, errorMessage = exports["lb-phone"]:AddCustomApp({
         identifier = identifier,
-        name = Config.name,
-        description = Config.description,
+        name = store.name or Config.name,
+        description = store.description or Config.description,
         developer = Config.developer,
         defaultApp = Config.defaultApp,
         size = Config.size,
@@ -41,6 +55,17 @@ CreateThread(function()
     end
 
     addApp()
+end)
+
+-- Re-register with the right store text when the player switches the phone's language.
+CreateThread(function()
+    while true do
+        Wait(5000)
+        if registeredLocale and GetResourceState("lb-phone") == "started" and phoneLocale() ~= registeredLocale then
+            exports["lb-phone"]:RemoveCustomApp(identifier)
+            addApp()
+        end
+    end
 end)
 
 AddEventHandler("onResourceStart", function(resource)

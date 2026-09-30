@@ -4,11 +4,11 @@ import { reset } from '../stores/router';
 import { session } from '../stores/session';
 import { bootstrap, installPushHandlers } from '../stores/online';
 import { componentsReady, request } from '../bridge/nui';
-import { errorText } from '../lib/toast';
+import { t, te } from '../i18n';
 import { asset } from '../lib/asset';
 
 const failed = ref(false);
-const reason = ref('Could not reach the server.');
+const reason = ref('');
 
 async function start() {
   failed.value = false;
@@ -18,7 +18,7 @@ async function start() {
   const ok = await bootstrap();
   if (!ok) {
     const probe = await request('ping');
-    reason.value = probe?.ok ? 'Could not load your profile.' : (errorText[probe?.error] ?? 'Could not reach the server.');
+    reason.value = probe?.ok ? t('boot.noProfile') : probe?.error === 'network' || !probe ? t('boot.noServer') : te(probe.error);
   }
   // Keep the splash up briefly so it doesn't flash.
   await new Promise((r) => setTimeout(r, Math.max(0, 450 - (Date.now() - started))));
@@ -38,11 +38,11 @@ onMounted(start);
 <template>
   <div class="flex h-full flex-col items-center justify-center gap-5 bg-bg">
     <img :src="asset('icon.svg')" alt="" class="boot-logo size-20 rounded-[22px] shadow-[0_10px_30px_rgba(0,0,0,.35)]" />
-    <div class="font-display text-2xl font-extrabold tracking-tight">Chess</div>
+    <div class="font-display text-2xl font-extrabold tracking-tight">{{ t('app.name') }}</div>
     <div v-if="!failed" class="mt-2 size-6 rounded-full border-[3px] border-surface-3 border-t-green [animation:spin_700ms_linear_infinite]" />
     <template v-else>
       <div class="px-8 text-center text-sm text-muted">{{ reason }}</div>
-      <button class="btn btn-primary h-11 px-8" @click="start">Retry</button>
+      <button class="btn btn-primary h-11 px-8" @click="start">{{ t('common.retry') }}</button>
     </template>
   </div>
 </template>

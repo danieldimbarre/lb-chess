@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import TopBar from '../components/TopBar.vue';
 import Board from '../components/Board.vue';
@@ -191,7 +192,7 @@ watch(
 
 // View ------------------------------------------------------------------------------
 
-const myName = computed(() => session.me?.username ?? 'You');
+const myName = computed(() => session.me?.username ?? t('common.you'));
 const material = computed(() => materialInfo(model.atHead.value ? premoves.displayFen.value : model.viewFen.value, startFen));
 const boardFen = computed(() => (model.atHead.value ? premoves.displayFen.value : model.viewFen.value));
 const outcomeFor = computed(() => {
@@ -204,9 +205,9 @@ const outcomeFor = computed(() => {
 
 <template>
   <div class="flex h-full flex-col bg-bg pt-(--safe-top) pb-(--safe-bottom)">
-    <TopBar :title="`vs ${bot.name}`">
+    <TopBar :title="t('game.vsBot', { name: bot.name })">
       <span v-if="tc" class="mr-1 rounded-md bg-surface px-2 py-1 text-[0.72rem] font-bold text-muted">{{ tcLabel(tc) }}</span>
-      <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" aria-label="Game menu" @click="menu = true">
+      <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" :aria-label="t('common.gameMenu')" @click="menu = true">
         <Icon name="dots" :size="26" :stroke="3.4" />
       </button>
     </TopBar>
@@ -216,7 +217,7 @@ const outcomeFor = computed(() => {
       <template #top>
       <PlayerBar
         :name="bot.name"
-        :tag="`Level ${bot.level}`"
+        :tag="t('common.level', { n: bot.level })"
         :color="them"
         :captured="material.captured[them]"
         :diff="them === 'w' ? material.diff : -material.diff"
@@ -257,31 +258,31 @@ const outcomeFor = computed(() => {
     <GameNav :ply="model.state.ply" :head="model.head.value" @goto="model.goto">
       <template v-if="!over">
         <button class="tap flex flex-1 flex-col items-center justify-center text-[0.66rem] font-semibold text-ink-2 disabled:opacity-35" :disabled="model.turn.value !== me" @click="showHint">
-          <Icon name="eye" :size="20" />Hint
+          <Icon name="eye" :size="20" />{{ t('game.hint') }}
         </button>
         <button class="tap flex flex-1 flex-col items-center justify-center text-[0.66rem] font-semibold text-ink-2 disabled:opacity-35" :disabled="thinking || !model.head.value" @click="takeback">
-          <Icon name="undo" :size="20" />Takeback
+          <Icon name="undo" :size="20" />{{ t('game.takeback') }}
         </button>
       </template>
       <button v-else class="tap flex flex-[2] flex-col items-center justify-center text-[0.66rem] font-semibold text-green" @click="showResult = true">
-        <Icon name="trophy" :size="20" />Result
+        <Icon name="trophy" :size="20" />{{ t('game.result') }}
       </button>
     </GameNav>
 
     <Sheet :open="menu" @close="menu = false">
       <div class="flex flex-col px-2 pb-3 pt-2">
-        <button v-if="!over" class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold text-red" @click="askResign"><Icon name="flag" />Resign</button>
-        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; push('settings')"><Icon name="settings" />Board settings</button>
-        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; back()"><Icon name="back" />Leave game</button>
+        <button v-if="!over" class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold text-red" @click="askResign"><Icon name="flag" />{{ t('game.resign') }}</button>
+        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; push('settings')"><Icon name="settings" />{{ t('common.boardSettings') }}</button>
+        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; back()"><Icon name="back" />{{ t('game.leave') }}</button>
       </div>
     </Sheet>
 
     <Modal :open="confirmResign" @close="confirmResign = false">
       <div class="p-5 text-center">
-        <div class="font-display text-lg font-extrabold">Resign this game?</div>
+        <div class="font-display text-lg font-extrabold">{{ t('game.confirmResign') }}</div>
         <div class="mt-4 flex gap-3">
-          <button class="btn btn-secondary h-11 flex-1" @click="confirmResign = false">Cancel</button>
-          <button class="btn btn-danger h-11 flex-1" @click="resign">Resign</button>
+          <button class="btn btn-secondary h-11 flex-1" @click="confirmResign = false">{{ t('common.cancel') }}</button>
+          <button class="btn btn-danger h-11 flex-1" @click="resign">{{ t('game.resign') }}</button>
         </div>
       </div>
     </Modal>
@@ -292,13 +293,13 @@ const outcomeFor = computed(() => {
       :outcome="outcomeFor"
       :reason="over.reason"
       :me="{ name: myName, winner: outcomeFor === 'win' }"
-      :opponent="{ name: bot.name, caption: `Level ${bot.level}`, role: bot.role, tint: bot.tint, winner: outcomeFor === 'loss' }"
+      :opponent="{ name: bot.name, caption: t('common.level', { n: bot.level }), role: bot.role, tint: bot.tint, winner: outcomeFor === 'loss' }"
       @close="showResult = false"
     >
-      <button class="btn btn-primary h-12 w-full text-lg" @click="rematch">Rematch</button>
+      <button class="btn btn-primary h-12 w-full text-lg" @click="rematch">{{ t('game.rematch') }}</button>
       <div class="flex gap-3">
-        <button class="btn btn-secondary h-11 flex-1" @click="replace('bots')">New Bot</button>
-        <button class="btn btn-secondary h-11 flex-1" @click="review">Game Review</button>
+        <button class="btn btn-secondary h-11 flex-1" @click="replace('bots')">{{ t('game.newBot') }}</button>
+        <button class="btn btn-secondary h-11 flex-1" @click="review">{{ t('game.review') }}</button>
       </div>
     </GameOverModal>
   </div>

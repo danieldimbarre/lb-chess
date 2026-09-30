@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue';
 import { router, views, current } from './stores/router';
-import { initTheme } from './stores/theme';
+import { initAppearance } from './stores/appearance';
 import { componentsReady } from './bridge/nui';
 import { preloadPieces } from './chess/pieces';
 import Toasts from './components/Toasts.vue';
@@ -14,7 +14,7 @@ const view = computed(() => views.get(route.value.name) ?? views.get('home'));
 
 onMounted(async () => {
   await componentsReady();
-  initTheme();
+  await initAppearance();
 });
 </script>
 

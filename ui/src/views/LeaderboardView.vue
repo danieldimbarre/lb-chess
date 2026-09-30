@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t as tr } from '../i18n';
 import { computed, onMounted, ref } from 'vue';
 import Avatar from '../components/Avatar.vue';
 import Icon from '../components/Icon.vue';
@@ -11,9 +12,9 @@ type Sort = 'games' | 'winrate' | 'wins';
 type Row = LeaderboardRow & { online?: boolean };
 
 const tabs: { id: Sort; label: string }[] = [
-  { id: 'games', label: 'Most Games' },
-  { id: 'winrate', label: 'Win Rate' },
-  { id: 'wins', label: 'Most Wins' },
+  { id: 'games', label: 'leaderboard.games' },
+  { id: 'winrate', label: 'leaderboard.winrate' },
+  { id: 'wins', label: 'leaderboard.wins' },
 ];
 
 const sort = ref<Sort>('games');
@@ -35,15 +36,15 @@ const data = computed(() => cache.value[sort.value]);
 const tabIndex = computed(() => tabs.findIndex((t) => t.id === sort.value));
 
 const metric = (r: Row) => (sort.value === 'games' ? `${r.games}` : sort.value === 'winrate' ? `${r.winRate.toFixed(1)}%` : `${r.wins}`);
-const metricLabel = computed(() => (sort.value === 'games' ? 'games' : sort.value === 'winrate' ? 'win rate' : 'wins'));
+const metricLabel = computed(() => tr(sort.value === 'games' ? 'leaderboard.unitGames' : sort.value === 'winrate' ? 'leaderboard.unitWinrate' : 'leaderboard.unitWins'));
 const medal = (rank: number) => (['#ffc234', '#c9ccd1', '#d08a4f'] as const)[rank - 1];
 </script>
 
 <template>
   <div class="flex h-full flex-col bg-bg pt-(--safe-top)">
     <header class="flex h-12 items-center px-4">
-      <h1 class="flex-1 font-display text-[1.25rem] font-extrabold">Leaderboard</h1>
-      <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" aria-label="Refresh" @click="load(sort, true)">
+      <h1 class="flex-1 font-display text-[1.25rem] font-extrabold">{{ tr('leaderboard.title') }}</h1>
+      <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" :aria-label="tr('common.refresh')" @click="load(sort, true)">
         <Icon name="refresh" :class="loading ? '[animation:spin_800ms_linear_infinite]' : ''" />
       </button>
     </header>
@@ -60,12 +61,12 @@ const medal = (rank: number) => (['#ffc234', '#c9ccd1', '#d08a4f'] as const)[ran
         :class="sort === t.id ? 'text-ink' : 'text-muted'"
         @click="load(t.id)"
       >
-        {{ t.label }}
+        {{ tr(t.label) }}
       </button>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-4">
-      <div v-if="sort === 'winrate' && data" class="pb-2 text-[0.76rem] font-semibold text-muted">Minimum {{ data.minGames }} games to qualify.</div>
+      <div v-if="sort === 'winrate' && data" class="pb-2 text-[0.76rem] font-semibold text-muted">{{ tr('leaderboard.minGames', { n: data.minGames }) }}</div>
 
       <!-- podium -->
       <div v-if="data && data.rows.length >= 3" :key="sort" class="podium mb-3 grid grid-cols-3 items-end gap-2">
@@ -104,14 +105,14 @@ const medal = (rank: number) => (['#ffc234', '#c9ccd1', '#d08a4f'] as const)[ran
           </span>
           <span class="min-w-0 flex-1">
             <span class="block truncate font-semibold">{{ r.username }}</span>
-            <span class="block text-[0.74rem] text-muted">{{ r.wins }}W · {{ r.losses }}L · {{ r.draws }}D</span>
+            <span class="block text-[0.74rem] text-muted">{{ tr('leaderboard.wld', { w: r.wins, l: r.losses, d: r.draws }) }}</span>
           </span>
           <span class="text-right">
             <span class="block font-display font-extrabold">{{ metric(r) }}</span>
             <span class="block text-[0.66rem] font-bold uppercase text-muted">{{ metricLabel }}</span>
           </span>
         </button>
-        <div v-if="!data.rows.length" class="px-4 py-10 text-center text-[0.9rem] text-muted">No ranked players yet. Be the first!</div>
+        <div v-if="!data.rows.length" class="px-4 py-10 text-center text-[0.9rem] text-muted">{{ tr('leaderboard.empty') }}</div>
       </div>
       <div v-else class="flex justify-center py-16"><span class="size-7 rounded-full border-[3px] border-surface-3 border-t-green [animation:spin_700ms_linear_infinite]" /></div>
     </div>
@@ -121,8 +122,8 @@ const medal = (rank: number) => (['#ffc234', '#c9ccd1', '#d08a4f'] as const)[ran
       <span class="w-8 text-center font-display font-extrabold text-green">{{ data.me.rank ?? '—' }}</span>
       <Avatar :name="data.me.username" :size="34" />
       <span class="min-w-0 flex-1">
-        <span class="block truncate font-bold">You</span>
-        <span class="block text-[0.74rem] text-ink-2">{{ data.me.rank ? `Rank #${data.me.rank}` : sort === 'winrate' ? `Play ${data.minGames} games to rank` : 'Play a game to rank' }}</span>
+        <span class="block truncate font-bold">{{ tr('common.you') }}</span>
+        <span class="block text-[0.74rem] text-ink-2">{{ data.me.rank ? tr('leaderboard.rank', { n: data.me.rank }) : sort === 'winrate' ? tr('leaderboard.playNToRank', { n: data.minGames }) : tr('leaderboard.playToRank') }}</span>
       </span>
       <span class="font-display font-extrabold">{{ metric(data.me) }}</span>
     </div>

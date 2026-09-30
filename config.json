@@ -4,6 +4,13 @@
   "description": "Play chess online, challenge friends, battle bots and study positions.",
   "developer": "CR Network",
   "defaultApp": true,
+  "defaultLocale": "en",
+  "appStore": {
+    "pt": {
+      "name": "Xadrez",
+      "description": "Jogue xadrez online, desafie amigos, enfrente bots e estude posições."
+    }
+  },
   "size": 48210,
 
   "usernameMin": 3,

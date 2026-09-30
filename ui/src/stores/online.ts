@@ -3,6 +3,8 @@ import { session } from './session';
 import { current, reset } from './router';
 import { playSound } from '../chess/sounds';
 import { toast, showError } from '../lib/toast';
+import { watch } from 'vue';
+import { locale, t } from '../i18n';
 import type { Bootstrap, Challenge, GameSnapshot, MoveRecord, Profile, TimeControl } from '../types';
 
 let installed = false;
@@ -23,7 +25,7 @@ export function applyBootstrap(b: Bootstrap) {
 }
 
 export async function bootstrap(): Promise<boolean> {
-  const b = await request<Bootstrap>('bootstrap');
+  const b = await request<Bootstrap>('bootstrap', { locale: locale.value });
   if (!b?.ok) return false;
   applyBootstrap(b);
   return true;
@@ -32,6 +34,9 @@ export async function bootstrap(): Promise<boolean> {
 export function installPushHandlers() {
   if (installed) return;
   installed = true;
+
+  // The server writes phone notifications in the player's language.
+  watch(locale, (l) => request('locale', { locale: l }));
 
   onPush('game:start', (snap: GameSnapshot) => {
     syncTime(snap.serverTime);
@@ -73,7 +78,7 @@ export function installPushHandlers() {
     if (!g || g.id !== d.id) return;
     g.drawOffer = d.offer;
     if (d.offer && d.offer !== g.myColor) playSound('notify');
-    if (d.declined && !d.offer) toast('Draw declined');
+    if (d.declined && !d.offer) toast(t('game.drawDeclined'));
   });
 
   onPush('game:opponent', (d: { id: string; connected: boolean; deadline: number | null }) => {
@@ -107,8 +112,8 @@ export function installPushHandlers() {
     const mine = session.outgoing.find((c) => c.id === d.id);
     session.incoming = session.incoming.filter((c) => c.id !== d.id);
     session.outgoing = session.outgoing.filter((c) => c.id !== d.id);
-    if (mine && d.status === 'declined') toast(`${mine.to.username} declined your challenge`);
-    if (mine && d.status === 'expired') toast(`Challenge to ${mine.to.username} expired`);
+    if (mine && d.status === 'declined') toast(t('challenge.declined', { name: mine.to.username }));
+    if (mine && d.status === 'expired') toast(t('challenge.expired', { name: mine.to.username }));
   });
 }
 

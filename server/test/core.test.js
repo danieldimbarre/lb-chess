@@ -282,6 +282,19 @@ test('leaderboard sorts by most wins', async () => {
   assert.equal(lb.rows[0].rating, undefined);
 });
 
+test('phone notifications follow each player locale', async () => {
+  await registered();
+  await call('bootstrap', 2, { locale: 'pt-br' });
+  await call('challenge:send', 1, { username: 'Bob', tc: { base: 300, inc: 0 } });
+  assert.match(notes.at(-1).content, /Alice te desafiou \(5 min\)/);
+  await call('locale', 2, { locale: 'en' });
+  await call('challenge:send', 3, { username: 'Bob', tc: { base: 180, inc: 2 } });
+  assert.match(notes.at(-1).content, /Carol challenged you \(3 \| 2\)/);
+  // Unknown players fall back to config.defaultLocale.
+  await call('challenge:send', 3, { username: 'Alice', tc: { base: 600, inc: 0 } });
+  assert.match(notes.at(-1).content, /Carol challenged you \(10 min\)/);
+});
+
 test('search excludes self and returns presence', async () => {
   await registered();
   const r = await call('search', 1, { q: 'b' });

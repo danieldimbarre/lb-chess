@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import Icon from './Icon.vue';
+import { t as tr } from '../i18n';
 import { current, reset, type RouteName } from '../stores/router';
 import { computed } from 'vue';
 
 const tabs: { name: RouteName; label: string; icon: string }[] = [
-  { name: 'home', label: 'Play', icon: 'home' },
-  { name: 'leaderboard', label: 'Leaders', icon: 'trophy' },
-  { name: 'profile', label: 'Profile', icon: 'user' },
-  { name: 'settings', label: 'Settings', icon: 'settings' },
+  { name: 'home', label: 'tabs.play', icon: 'home' },
+  { name: 'leaderboard', label: 'tabs.leaders', icon: 'trophy' },
+  { name: 'profile', label: 'tabs.profile', icon: 'user' },
+  { name: 'settings', label: 'tabs.settings', icon: 'settings' },
 ];
 
 const active = computed(() => current().name);
@@ -28,7 +29,7 @@ function go(name: RouteName) {
       @click="go(t.name)"
     >
       <Icon :name="t.icon" :size="22" :stroke="active === t.name ? 2.6 : 2" />
-      {{ t.label }}
+      {{ tr(t.label) }}
     </button>
   </nav>
 </template>

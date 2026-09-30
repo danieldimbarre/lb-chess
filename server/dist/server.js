@@ -3582,6 +3582,44 @@
 
   // src/core.js
   var import_chess = __toESM(require_chess(), 1);
+
+  // src/i18n.js
+  var MESSAGES = {
+    en: {
+      title: "Chess",
+      challenge: "{name} challenged you ({tc})",
+      rematch: "{name} wants a rematch",
+      gameWhite: "Game on! You play White vs {name}",
+      gameBlack: "Game on! You play Black vs {name}",
+      min: "{n} min",
+      sec: "{n} sec"
+    },
+    pt: {
+      title: "Xadrez",
+      challenge: "{name} te desafiou ({tc})",
+      rematch: "{name} quer uma revanche",
+      gameWhite: "Partida iniciada! Voc\xEA joga de Brancas contra {name}",
+      gameBlack: "Partida iniciada! Voc\xEA joga de Pretas contra {name}",
+      min: "{n} min",
+      sec: "{n} s"
+    }
+  };
+  function toLocale(value) {
+    const v = String(value ?? "").toLowerCase();
+    if (v.startsWith("pt")) return "pt";
+    if (v.startsWith("en")) return "en";
+    return null;
+  }
+  function msg(locale, key, params = {}) {
+    const text = (MESSAGES[locale] ?? MESSAGES.en)[key] ?? MESSAGES.en[key] ?? key;
+    return text.replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? ""));
+  }
+  function tcText(locale, tc) {
+    const base = tc.base < 60 ? msg(locale, "sec", { n: tc.base }) : msg(locale, "min", { n: tc.base / 60 });
+    return tc.inc ? `${tc.base < 60 ? `${tc.base}s` : tc.base / 60} | ${tc.inc}` : base;
+  }
+
+  // src/core.js
   var START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   var SQUARE = /^[a-h][1-8]$/;
   var USERNAME = /^[A-Za-z0-9_]+$/;
@@ -3600,6 +3638,7 @@
       this.cfg = config2;
       this.log = log2;
       this.profiles = /* @__PURE__ */ new Map();
+      this.locales = /* @__PURE__ */ new Map();
       this.queues = /* @__PURE__ */ new Map();
       this.challenges = /* @__PURE__ */ new Map();
       this.games = /* @__PURE__ */ new Map();
@@ -3703,7 +3742,15 @@
       }
     }
     // Requests -------------------------------------------------------------------------
-    async bootstrap({ passport }) {
+    localeOf(passport) {
+      return this.locales.get(passport) ?? toLocale(this.cfg.defaultLocale) ?? "en";
+    }
+    setLocale(passport, value) {
+      const l = toLocale(value);
+      if (l) this.locales.set(passport, l);
+    }
+    async bootstrap({ passport, data = {} }) {
+      this.setLocale(passport, data.locale);
       this.touch(passport);
       const me = await this.profile(passport);
       const gameId = this.playerGame.get(passport);
@@ -3807,8 +3854,9 @@
       const view = this.challengeView(c);
       this.push(to, "challenge:incoming", view);
       this.push(from, "challenge:outgoing", view);
-      const what = rematchOf ? "wants a rematch" : `challenged you (${tc.base / 60} min${tc.inc ? ` | ${tc.inc}` : ""})`;
-      this.notify(to, "Chess", `${fromProfile.username} ${what}`);
+      const lang = this.localeOf(to);
+      const body = rematchOf ? msg(lang, "rematch", { name: fromProfile.username }) : msg(lang, "challenge", { name: fromProfile.username, tc: tcText(lang, tc) });
+      this.notify(to, msg(lang, "title"), body);
       return view;
     }
     async challengeAccept({ passport, data }) {
@@ -3894,8 +3942,8 @@
       this.playerGame.set(black, game.id);
       this.pushGame(game, "game:start", (p) => this.snapshot(game, p));
       this.pushGame(game, "queue:status", () => ({ queue: null }));
-      this.notify(white, "Chess", `Game on! You play White vs ${bp.username}`);
-      this.notify(black, "Chess", `Game on! You play Black vs ${wp.username}`);
+      this.notify(white, msg(this.localeOf(white), "title"), msg(this.localeOf(white), "gameWhite", { name: bp.username }));
+      this.notify(black, msg(this.localeOf(black), "title"), msg(this.localeOf(black), "gameBlack", { name: wp.username }));
       return game;
     }
     playingGame(passport, id) {
@@ -4202,6 +4250,10 @@
     handlers() {
       return {
         ping: async () => ({ ok: true, serverTime: this.now() }),
+        locale: async ({ passport, data }) => {
+          this.setLocale(passport, data.locale);
+          return { ok: true };
+        },
         bootstrap: (ctx) => this.bootstrap(ctx),
         register: (ctx) => this.register(ctx),
         checkName: (ctx) => this.checkName(ctx),

@@ -1,9 +1,11 @@
 import { reactive, ref, watch } from 'vue';
 import type { TimeControl } from '../types';
+import { t } from '../i18n';
 
 export interface TcCategory {
   id: 'bullet' | 'blitz' | 'rapid';
-  label: string;
+  /** Localised name (getter, so it follows the language setting). */
+  readonly label: string;
   icon: string;
   color: string;
   items: TimeControl[];
@@ -13,7 +15,9 @@ export interface TcCategory {
 export const TC_CATEGORIES: TcCategory[] = [
   {
     id: 'bullet',
-    label: 'Bullet',
+    get label() {
+      return t('tc.bullet');
+    },
     icon: 'bullet',
     color: '#e3aa24',
     items: [{ base: 60, inc: 0 }, { base: 60, inc: 1 }, { base: 120, inc: 1 }],
@@ -21,7 +25,9 @@ export const TC_CATEGORIES: TcCategory[] = [
   },
   {
     id: 'blitz',
-    label: 'Blitz',
+    get label() {
+      return t('tc.blitz');
+    },
     icon: 'bolt',
     color: '#fad541',
     items: [{ base: 180, inc: 0 }, { base: 180, inc: 2 }, { base: 300, inc: 0 }],
@@ -29,7 +35,9 @@ export const TC_CATEGORIES: TcCategory[] = [
   },
   {
     id: 'rapid',
-    label: 'Rapid',
+    get label() {
+      return t('tc.rapid');
+    },
     icon: 'clock',
     color: '#81b64c',
     items: [{ base: 600, inc: 0 }, { base: 900, inc: 10 }, { base: 1800, inc: 0 }],
@@ -38,7 +46,7 @@ export const TC_CATEGORIES: TcCategory[] = [
 ];
 
 export function tcLabel(tc: TimeControl): string {
-  const base = tc.base < 60 ? `${tc.base} sec` : `${tc.base / 60} min`;
+  const base = tc.base < 60 ? t('tc.sec', { n: tc.base }) : t('tc.min', { n: tc.base / 60 });
   if (!tc.inc) return base;
   return `${tc.base < 60 ? `${tc.base}s` : tc.base / 60} | ${tc.inc}`;
 }

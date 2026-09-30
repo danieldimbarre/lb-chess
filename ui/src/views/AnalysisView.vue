@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Chess } from 'chess.js';
 import TopBar from '../components/TopBar.vue';
@@ -40,25 +41,18 @@ const viewDests = computed(() => {
 });
 const top = computed<Color>(() => (orientation.value === 'w' ? 'b' : 'w'));
 const bottom = computed<Color>(() => orientation.value);
-const nameOf = (c: Color) => (c === 'w' ? props.white || 'White' : props.black || 'Black');
+const nameOf = (c: Color) => (c === 'w' ? props.white || t('common.white') : props.black || t('common.black'));
 
 const status = computed(() => {
   if (!model.atHead.value) return null;
   const o = model.outcome();
   if (!o) return null;
-  const labels: Record<string, string> = {
-    checkmate: 'Checkmate',
-    stalemate: 'Stalemate',
-    insufficient: 'Insufficient material',
-    threefold: 'Threefold repetition',
-    fifty: '50-move rule',
-  };
-  const winner = o.result === '1-0' ? 'White wins' : o.result === '0-1' ? 'Black wins' : 'Draw';
-  return `${labels[o.reason] ?? o.reason} · ${winner}`;
+  const winner = o.result === '1-0' ? t('analysis.whiteWins') : o.result === '0-1' ? t('analysis.blackWins') : t('analysis.draw');
+  return `${t(`analysis.${o.reason}`)} · ${winner}`;
 });
 
 function onMove(from: string, to: string, promotion?: string) {
-  if (!model.play(from, to, promotion, { branch: true })) toast('Illegal move', 'error');
+  if (!model.play(from, to, promotion, { branch: true })) toast(t('analysis.illegal'), 'error');
 }
 
 function flip() {
@@ -74,7 +68,7 @@ async function copy(kind: 'fen' | 'pgn') {
   menu.value = false;
   const text = kind === 'fen' ? model.viewFen.value : model.pgn({ Event: 'Analysis' });
   const ok = await copyText(text);
-  toast(ok ? `${kind.toUpperCase()} copied` : 'Copy blocked by the game client', ok ? 'success' : 'error');
+  toast(ok ? t('analysis.copied', { what: kind.toUpperCase() }) : t('analysis.copyBlocked'), ok ? 'success' : 'error');
 }
 
 function loadPgn() {
@@ -92,7 +86,7 @@ function loadPgn() {
       pgnInput.value = '';
       return;
     } catch {
-      return toast('Could not read that PGN / FEN', 'error');
+      return toast(t('analysis.badPgn'), 'error');
     }
   }
   const fen = c.getHeaders().FEN || START_FEN;
@@ -168,18 +162,18 @@ function reset() {
 
 <template>
   <div class="flex h-full flex-col bg-bg pt-(--safe-top) pb-(--safe-bottom)">
-    <TopBar :title="editing ? 'Setup position' : 'Analysis'">
+    <TopBar :title="editing ? t('analysis.setup') : t('analysis.title')">
       <template v-if="!editing">
-        <button class="tap flex size-10 items-center justify-center rounded-full" :class="engineOn ? 'text-green' : 'text-muted'" aria-label="Toggle engine" @click="engineOn = !engineOn">
+        <button class="tap flex size-10 items-center justify-center rounded-full" :class="engineOn ? 'text-green' : 'text-muted'" :aria-label="t('analysis.toggleEngine')" @click="engineOn = !engineOn">
           <Icon name="analysis" />
         </button>
-        <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" aria-label="Flip board" @click="flip">
+        <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" :aria-label="t('analysis.flip')" @click="flip">
           <Icon name="flip" />
         </button>
-        <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" aria-label="Edit position" @click="editing = true">
+        <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" :aria-label="t('analysis.edit')" @click="editing = true">
           <Icon name="edit" />
         </button>
-        <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" aria-label="More" @click="menu = true">
+        <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" :aria-label="t('common.more')" @click="menu = true">
           <Icon name="dots" :size="26" :stroke="3.4" />
         </button>
       </template>
@@ -220,28 +214,28 @@ function reset() {
             <span v-if="evalInfo?.depth" class="shrink-0 text-[0.68rem] text-muted">d{{ evalInfo.depth }}</span>
           </div>
           <div class="h-6 truncate pt-1 text-center text-[0.84rem] font-semibold" :class="status ? 'text-gold' : 'text-muted'">
-            {{ status ?? (model.viewTurn.value === 'w' ? 'White to move' : 'Black to move') }}
+            {{ status ?? (model.viewTurn.value === 'w' ? t('analysis.whiteToMove') : t('analysis.blackToMove')) }}
           </div>
         </template>
       </BoardStage>
       <GameNav :ply="model.state.ply" :head="model.head.value" @goto="model.goto">
         <button class="tap flex h-12 flex-1 flex-col items-center justify-center text-[0.68rem] font-semibold text-ink-2" :disabled="!model.head.value" @click="model.undo()">
           <Icon name="undo" :size="20" />
-          Undo
+          {{ t('game.undo') }}
         </button>
       </GameNav>
     </template>
 
-    <Sheet :open="menu" title="Analysis" @close="menu = false">
+    <Sheet :open="menu" :title="t('analysis.title')" @close="menu = false">
       <div class="flex flex-col px-2 pb-3">
-        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="copy('fen')"><Icon name="copy" />Copy FEN</button>
-        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="copy('pgn')"><Icon name="share" />Copy PGN</button>
-        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; push('bots', { fen: model.viewFen.value })"><Icon name="bot" />Play vs bot from here</button>
-        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="reset"><Icon name="refresh" />Reset to start</button>
-        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; push('settings')"><Icon name="settings" />Board settings</button>
+        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="copy('fen')"><Icon name="copy" />{{ t('analysis.copyFen') }}</button>
+        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="copy('pgn')"><Icon name="share" />{{ t('analysis.copyPgn') }}</button>
+        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; push('bots', { fen: model.viewFen.value })"><Icon name="bot" />{{ t('analysis.playBot') }}</button>
+        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="reset"><Icon name="refresh" />{{ t('analysis.reset') }}</button>
+        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; push('settings')"><Icon name="settings" />{{ t('common.boardSettings') }}</button>
         <div class="px-3 pt-3">
-          <textarea v-model="pgnInput" rows="3" class="field resize-none text-[0.8rem]!" placeholder="Paste a PGN or FEN to load" spellcheck="false" />
-          <button class="btn btn-primary mt-3 h-11 w-full" :disabled="!pgnInput.trim()" @click="loadPgn">Load</button>
+          <textarea v-model="pgnInput" rows="3" class="field resize-none text-[0.8rem]!" :placeholder="t('analysis.pastePlaceholder')" spellcheck="false" />
+          <button class="btn btn-primary mt-3 h-11 w-full" :disabled="!pgnInput.trim()" @click="loadPgn">{{ t('common.load') }}</button>
         </div>
       </div>
     </Sheet>

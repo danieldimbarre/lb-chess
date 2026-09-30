@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Board from '../components/Board.vue';
 import PlayerBar from '../components/PlayerBar.vue';
@@ -228,12 +229,12 @@ const outcome = computed(() => {
 });
 
 const oppStatus = computed(() => {
-  if (disconnectLeft.value !== null) return `Disconnected · ${disconnectLeft.value}s`;
-  if (firstMoveLeft.value !== null && serverTurn.value === them) return `First move · ${firstMoveLeft.value}s`;
-  if (drawOfferedByMe.value) return 'Draw offer sent';
+  if (disconnectLeft.value !== null) return t('game.disconnected', { n: disconnectLeft.value });
+  if (firstMoveLeft.value !== null && serverTurn.value === them) return t('game.firstMove', { n: firstMoveLeft.value });
+  if (drawOfferedByMe.value) return t('game.drawSent');
   return null;
 });
-const myStatus = computed(() => (firstMoveLeft.value !== null && serverTurn.value === me ? `Your first move · ${firstMoveLeft.value}s` : null));
+const myStatus = computed(() => (firstMoveLeft.value !== null && serverTurn.value === me ? t('game.yourFirstMove', { n: firstMoveLeft.value }) : null));
 
 const rematchState = computed(() => {
   const r = game.value?.rematch;
@@ -245,14 +246,14 @@ const rematchState = computed(() => {
 <template>
   <div class="flex h-full flex-col bg-bg pt-(--safe-top) pb-(--safe-bottom)">
     <header class="flex h-12 shrink-0 items-center gap-1 px-2">
-      <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" aria-label="Back" @click="leave">
+      <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" :aria-label="t('common.back')" @click="leave">
         <Icon name="back" :size="24" />
       </button>
       <div class="flex flex-1 items-center gap-1.5 font-display font-extrabold">
         <Icon :name="cat.icon" :size="18" :style="{ color: cat.color }" />
-        {{ tcLabel(snap.tc) }} <span class="text-[0.8rem] font-bold text-muted">· Online</span>
+        {{ tcLabel(snap.tc) }} <span class="text-[0.8rem] font-bold text-muted">· {{ t('game.online') }}</span>
       </div>
-      <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" aria-label="Game menu" @click="menu = true">
+      <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" :aria-label="t('common.gameMenu')" @click="menu = true">
         <Icon name="dots" :size="26" :stroke="3.4" />
       </button>
     </header>
@@ -288,9 +289,9 @@ const rematchState = computed(() => {
         <Transition name="drop">
           <div v-if="drawOfferedByThem && playing" class="absolute inset-x-3 top-3 z-50 flex items-center gap-2 rounded-xl bg-surface-2 p-2.5 pl-3.5 shadow-[0_10px_30px_rgba(0,0,0,.45)]">
             <span class="text-lg">½</span>
-            <span class="flex-1 text-[0.9rem] font-bold">{{ oppInfo.username }} offers a draw</span>
-            <button class="btn btn-secondary h-9 px-3 text-sm" @click="act('game:draw', { action: 'decline' })">Decline</button>
-            <button class="btn btn-primary h-9 px-3 text-sm" @click="act('game:draw', { action: 'accept' })">Accept</button>
+            <span class="flex-1 text-[0.9rem] font-bold">{{ t('game.offersDraw', { name: oppInfo.username }) }}</span>
+            <button class="btn btn-secondary h-9 px-3 text-sm" @click="act('game:draw', { action: 'decline' })">{{ t('common.decline') }}</button>
+            <button class="btn btn-primary h-9 px-3 text-sm" @click="act('game:draw', { action: 'accept' })">{{ t('common.accept') }}</button>
           </div>
         </Transition>
       </div>
@@ -314,7 +315,7 @@ const rematchState = computed(() => {
           class="tap flex flex-1 flex-col items-center justify-center text-[0.66rem] font-semibold text-ink-2"
           @click="resignOrAbort('abort')"
         >
-          <Icon name="x" :size="20" />Abort
+          <Icon name="x" :size="20" />{{ t('game.abort') }}
         </button>
         <button
           v-else
@@ -323,14 +324,14 @@ const rematchState = computed(() => {
           :disabled="drawOfferedByMe"
           @click="drawOfferedByThem ? act('game:draw', { action: 'accept' }) : offerDraw()"
         >
-          <span class="text-[1.15rem] font-extrabold leading-5">½</span>{{ drawOfferedByThem ? 'Accept' : 'Draw' }}
+          <span class="text-[1.15rem] font-extrabold leading-5">½</span>{{ drawOfferedByThem ? t('common.accept') : t('game.draw') }}
         </button>
         <button class="tap flex flex-1 flex-col items-center justify-center text-[0.66rem] font-semibold text-ink-2" :disabled="(game?.moves.length ?? 0) < 2" :class="(game?.moves.length ?? 0) < 2 ? 'opacity-40' : ''" @click="resignOrAbort('resign')">
-          <Icon name="flag" :size="20" />Resign
+          <Icon name="flag" :size="20" />{{ t('game.resign') }}
         </button>
       </template>
       <button v-else class="tap flex flex-[2] flex-col items-center justify-center text-[0.66rem] font-semibold text-green" @click="showResult = true">
-        <Icon name="trophy" :size="20" />Result
+        <Icon name="trophy" :size="20" />{{ t('game.result') }}
       </button>
     </GameNav>
 
@@ -338,23 +339,23 @@ const rematchState = computed(() => {
       <div class="flex flex-col px-2 pb-3 pt-2">
         <template v-if="playing">
           <button v-if="(game?.moves.length ?? 0) >= 2 && !drawOfferedByMe" class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="offerDraw">
-            <span class="w-[22px] text-center text-lg font-extrabold">½</span>Offer draw
+            <span class="w-[22px] text-center text-lg font-extrabold">½</span>{{ t('game.offerDraw') }}
           </button>
-          <button v-if="(game?.moves.length ?? 0) < 2" class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="resignOrAbort('abort')"><Icon name="x" />Abort game</button>
-          <button v-else class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold text-red" @click="resignOrAbort('resign')"><Icon name="flag" />Resign</button>
+          <button v-if="(game?.moves.length ?? 0) < 2" class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="resignOrAbort('abort')"><Icon name="x" />{{ t('game.abortGame') }}</button>
+          <button v-else class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold text-red" @click="resignOrAbort('resign')"><Icon name="flag" />{{ t('game.resign') }}</button>
         </template>
-        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; push('settings')"><Icon name="settings" />Board settings</button>
-        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; leave()"><Icon name="home" />{{ playing ? 'Home (game continues)' : 'Home' }}</button>
+        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; push('settings')"><Icon name="settings" />{{ t('common.boardSettings') }}</button>
+        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; leave()"><Icon name="home" />{{ playing ? t('game.homeContinues') : t('game.home') }}</button>
       </div>
     </Sheet>
 
     <Modal :open="!!confirm" @close="confirm = null">
       <div class="p-5 text-center">
-        <div class="font-display text-lg font-extrabold">{{ confirm === 'abort' ? 'Abort this game?' : 'Resign this game?' }}</div>
-        <div v-if="confirm === 'resign'" class="mt-1 text-[0.85rem] text-muted">This counts as a loss.</div>
+        <div class="font-display text-lg font-extrabold">{{ confirm === 'abort' ? t('game.confirmAbort') : t('game.confirmResign') }}</div>
+        <div v-if="confirm === 'resign'" class="mt-1 text-[0.85rem] text-muted">{{ t('game.countsAsLoss') }}</div>
         <div class="mt-4 flex gap-3">
-          <button class="btn btn-secondary h-11 flex-1" @click="confirm = null">Cancel</button>
-          <button class="btn btn-danger h-11 flex-1" @click="doConfirm(confirm!)">{{ confirm === 'abort' ? 'Abort' : 'Resign' }}</button>
+          <button class="btn btn-secondary h-11 flex-1" @click="confirm = null">{{ t('common.cancel') }}</button>
+          <button class="btn btn-danger h-11 flex-1" @click="doConfirm(confirm!)">{{ confirm === 'abort' ? t('game.abort') : t('game.resign') }}</button>
         </div>
       </div>
     </Modal>
@@ -368,15 +369,15 @@ const rematchState = computed(() => {
       :opponent="{ name: oppInfo.username, winner: outcome === 'loss' }"
       @close="showResult = false"
     >
-      <button v-if="rematchState === 'received'" class="btn btn-primary pulse h-12 w-full text-lg" @click="rematch">Accept Rematch</button>
+      <button v-if="rematchState === 'received'" class="btn btn-primary pulse h-12 w-full text-lg" @click="rematch">{{ t('game.acceptRematch') }}</button>
       <button v-else-if="rematchState === 'sent'" class="btn btn-secondary h-12 w-full text-lg" disabled>
         <span class="size-4 rounded-full border-2 border-surface-3 border-t-green [animation:spin_800ms_linear_infinite]" />
-        Rematch sent
+        {{ t('game.rematchSent') }}
       </button>
-      <button v-else class="btn btn-primary h-12 w-full text-lg" @click="rematch">Rematch</button>
+      <button v-else class="btn btn-primary h-12 w-full text-lg" @click="rematch">{{ t('game.rematch') }}</button>
       <div class="flex gap-3">
-        <button class="btn btn-secondary h-11 flex-1" @click="newGame">New {{ tcLabel(snap.tc) }}</button>
-        <button class="btn btn-secondary h-11 flex-1" :disabled="!model.head.value" @click="review">Game Review</button>
+        <button class="btn btn-secondary h-11 flex-1" @click="newGame">{{ t('game.newGame', { tc: tcLabel(snap.tc) }) }}</button>
+        <button class="btn btn-secondary h-11 flex-1" :disabled="!model.head.value" @click="review">{{ t('game.review') }}</button>
       </div>
     </GameOverModal>
   </div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { computed, nextTick, ref, watch } from 'vue';
 import type { MoveRecord } from '../types';
 import San from './San.vue';
@@ -40,7 +41,7 @@ watch(
 
 <template>
   <div ref="scroller" class="flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto whitespace-nowrap bg-surface px-2 text-[0.86rem]">
-    <span v-if="!moves.length" class="px-1 text-muted">Moves will appear here</span>
+    <span v-if="!moves.length" class="px-1 text-muted">{{ t('game.movesPlaceholder') }}</span>
     <template v-for="row in rows" :key="row.num">
       <span class="pl-1.5 pr-0.5 font-semibold text-muted">{{ row.num }}.</span>
       <button

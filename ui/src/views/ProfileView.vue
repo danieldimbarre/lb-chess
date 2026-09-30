@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { computed, onMounted, ref } from 'vue';
 import { Chess } from 'chess.js';
 import Avatar from '../components/Avatar.vue';
@@ -54,10 +55,10 @@ function parseTc(tc: string) {
 }
 function ago(ts: number) {
   const s = Math.max(1, Math.floor((Date.now() - ts) / 1000));
-  if (s < 60) return 'now';
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
+  if (s < 60) return t('profile.now');
+  if (s < 3600) return t('profile.minutesAgo', { n: Math.floor(s / 60) });
+  if (s < 86400) return t('profile.hoursAgo', { n: Math.floor(s / 3600) });
+  return t('profile.daysAgo', { n: Math.floor(s / 86400) });
 }
 
 function open(g: GameRow) {
@@ -76,7 +77,7 @@ function open(g: GameRow) {
   <div class="flex h-full flex-col bg-bg pt-(--safe-top)">
     <TopBar v-if="!asTab" :title="username ?? ''" />
     <header v-else class="flex h-12 items-center px-4">
-      <h1 class="font-display text-[1.25rem] font-extrabold">Profile</h1>
+      <h1 class="font-display text-[1.25rem] font-extrabold">{{ t('profile.title') }}</h1>
     </header>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
@@ -90,7 +91,7 @@ function open(g: GameRow) {
             <div class="min-w-0">
               <div class="truncate font-display text-[1.45rem] font-extrabold leading-tight">{{ p.username }}</div>
               <div class="text-[0.84rem] font-semibold text-muted">
-                {{ data!.playing ? 'Playing now' : data!.online ? 'Online' : 'Offline' }}<template v-if="data!.rank"> · #{{ data!.rank }} by games played</template>
+                {{ data!.playing ? t('profile.playingNow') : data!.online ? t('common.online') : t('common.offline') }}<template v-if="data!.rank"> · {{ t('profile.rankByGames', { n: data!.rank }) }}</template>
               </div>
             </div>
           </section>
@@ -98,22 +99,22 @@ function open(g: GameRow) {
           <section class="grid grid-cols-3 gap-2">
             <div class="card px-2 py-3 text-center">
               <div class="font-display text-[1.35rem] font-extrabold">{{ p.games }}</div>
-              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">Games</div>
+              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">{{ t('profile.games') }}</div>
             </div>
             <div class="card px-2 py-3 text-center">
               <div class="font-display text-[1.35rem] font-extrabold">{{ p.wins }}</div>
-              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">Wins</div>
+              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">{{ t('profile.wins') }}</div>
             </div>
             <div class="card px-2 py-3 text-center">
               <div class="font-display text-[1.35rem] font-extrabold">{{ winRate }}%</div>
-              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">Win rate</div>
+              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">{{ t('profile.winRate') }}</div>
             </div>
           </section>
 
           <section class="card mt-3 p-4">
             <div class="flex items-baseline justify-between">
-              <span class="font-display font-extrabold">{{ p.games }} {{ p.games === 1 ? 'game' : 'games' }}</span>
-              <span class="text-[0.8rem] font-semibold text-muted">{{ p.wins }}W · {{ p.losses }}L · {{ p.draws }}D</span>
+              <span class="font-display font-extrabold">{{ t('profile.gamesCount', { n: p.games }) }}</span>
+              <span class="text-[0.8rem] font-semibold text-muted">{{ t('leaderboard.wld', { w: p.wins, l: p.losses, d: p.draws }) }}</span>
             </div>
             <div class="mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-3">
               <div class="bar bg-green" :style="{ width: `${pct(p.wins)}%` }" />
@@ -121,18 +122,18 @@ function open(g: GameRow) {
               <div class="bar bg-red" :style="{ width: `${pct(p.losses)}%` }" />
             </div>
             <div class="mt-2 flex justify-between text-[0.74rem] font-bold">
-              <span class="text-green">{{ Math.round(pct(p.wins)) }}% won</span>
-              <span class="text-muted">{{ Math.round(pct(p.draws)) }}% drawn</span>
-              <span class="text-red">{{ Math.round(pct(p.losses)) }}% lost</span>
+              <span class="text-green">{{ t('profile.won', { n: Math.round(pct(p.wins)) }) }}</span>
+              <span class="text-muted">{{ t('profile.drawn', { n: Math.round(pct(p.draws)) }) }}</span>
+              <span class="text-red">{{ t('profile.lost', { n: Math.round(pct(p.losses)) }) }}</span>
             </div>
           </section>
 
           <button v-if="!data!.isMe" class="btn btn-primary mt-3 h-12 w-full text-lg" @click="push('challenge', { username: p.username })">
-            <Icon name="swords" /> Challenge
+            <Icon name="swords" /> {{ t('profile.challenge') }}
           </button>
 
           <section class="mt-4">
-            <div class="pb-2 text-[0.72rem] font-bold uppercase tracking-wider text-muted">Recent games</div>
+            <div class="pb-2 text-[0.72rem] font-bold uppercase tracking-wider text-muted">{{ t('profile.recent') }}</div>
             <div class="card overflow-hidden">
               <button
                 v-for="g in data!.games"
@@ -146,16 +147,16 @@ function open(g: GameRow) {
                     <span class="size-2.5 shrink-0 rounded-sm border border-black/30" :class="side(g) === 'w' ? 'bg-white' : 'bg-[#312e2b]'" />
                     vs {{ side(g) === 'w' ? g.black : g.white }}
                   </span>
-                  <span class="block text-[0.74rem] text-muted">{{ tcLabel(parseTc(g.tc)) }} · {{ Math.ceil(g.moves / 2) }} moves · {{ g.reason }} · {{ ago(g.createdAt) }}</span>
+                  <span class="block text-[0.74rem] text-muted">{{ tcLabel(parseTc(g.tc)) }} · {{ t('profile.moves', { n: Math.ceil(g.moves / 2) }) }} · {{ t(`reasonShort.${g.reason}`) }} · {{ ago(g.createdAt) }}</span>
                 </span>
                 <span
                   class="shrink-0 rounded-md px-2 py-1 text-[0.7rem] font-extrabold uppercase text-white"
                   :class="{ 'bg-green': outcome(g) === 'win', 'bg-red': outcome(g) === 'loss', 'bg-[#8b8987]': outcome(g) === 'draw' }"
                 >
-                  {{ outcome(g) === 'win' ? 'Won' : outcome(g) === 'loss' ? 'Lost' : 'Draw' }}
+                  {{ outcome(g) === 'win' ? t('profile.resultWon') : outcome(g) === 'loss' ? t('profile.resultLost') : t('profile.resultDraw') }}
                 </span>
               </button>
-              <div v-if="!data!.games.length" class="px-4 py-8 text-center text-[0.88rem] text-muted">No games yet.</div>
+              <div v-if="!data!.games.length" class="px-4 py-8 text-center text-[0.88rem] text-muted">{{ t('profile.empty') }}</div>
             </div>
           </section>
         </div>

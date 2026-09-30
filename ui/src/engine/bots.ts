@@ -7,8 +7,6 @@ export interface BotProfile {
   level: number;
   role: 'p' | 'n' | 'b' | 'r' | 'q' | 'k';
   tint: string;
-  tagline: string;
-  greeting: string;
   /** Weak bots: score every root move at this depth then pick with noise. */
   rootDepth?: number;
   /** Centipawn standard deviation of noise added to root scores. */
@@ -21,14 +19,14 @@ export interface BotProfile {
 }
 
 export const BOTS: BotProfile[] = [
-  { id: 'pip', name: 'Pip', level: 1, role: 'p', tint: '#b8902d', tagline: 'Just learned how the horsey moves.', greeting: 'Hi! Is the castle the one that goes sideways?', rootDepth: 1, noise: 260, blunder: 0.35 },
-  { id: 'maya', name: 'Maya', level: 2, role: 'n', tint: '#c3632e', tagline: 'Plays fast, thinks later.', greeting: 'Let’s go! I love trading pieces.', rootDepth: 1, noise: 140, blunder: 0.16 },
-  { id: 'leo', name: 'Leo', level: 3, role: 'b', tint: '#3f7fbf', tagline: 'Club newcomer with a bishop crush.', greeting: 'Good luck, have fun!', rootDepth: 2, noise: 75, blunder: 0.08 },
-  { id: 'sofia', name: 'Sofia', level: 4, role: 'r', tint: '#8c5bb5', tagline: 'Solid, patient, punishes hanging pieces.', greeting: 'Don’t leave anything undefended.', rootDepth: 2, noise: 35, blunder: 0.035 },
-  { id: 'viktor', name: 'Viktor', level: 5, role: 'q', tint: '#b8443c', tagline: 'Tactical brawler from the park.', greeting: 'I play for the attack. Always.', rootDepth: 3, noise: 18, blunder: 0.015 },
-  { id: 'amara', name: 'Amara', level: 6, role: 'k', tint: '#2f8f8a', tagline: 'Tournament regular. Few mistakes.', greeting: 'Best of luck. Play your best moves.', maxDepth: 5, timeMs: 700 },
-  { id: 'kaspar', name: 'Kaspar', level: 7, role: 'n', tint: '#5d9948', tagline: 'Calculates deep, converts cleanly.', greeting: 'Show me what you’ve prepared.', maxDepth: 8, timeMs: 1300 },
-  { id: 'nova', name: 'Nova', level: 8, role: 'q', tint: '#1f1e1c', tagline: 'Full engine strength. No mercy.', greeting: 'Engine mode engaged.', maxDepth: 64, timeMs: 2500 },
+  { id: 'pip', name: 'Pip', level: 1, role: 'p', tint: '#b8902d', rootDepth: 1, noise: 260, blunder: 0.35 },
+  { id: 'maya', name: 'Maya', level: 2, role: 'n', tint: '#c3632e', rootDepth: 1, noise: 140, blunder: 0.16 },
+  { id: 'leo', name: 'Leo', level: 3, role: 'b', tint: '#3f7fbf', rootDepth: 2, noise: 75, blunder: 0.08 },
+  { id: 'sofia', name: 'Sofia', level: 4, role: 'r', tint: '#8c5bb5', rootDepth: 2, noise: 35, blunder: 0.035 },
+  { id: 'viktor', name: 'Viktor', level: 5, role: 'q', tint: '#b8443c', rootDepth: 3, noise: 18, blunder: 0.015 },
+  { id: 'amara', name: 'Amara', level: 6, role: 'k', tint: '#2f8f8a', maxDepth: 5, timeMs: 700 },
+  { id: 'kaspar', name: 'Kaspar', level: 7, role: 'n', tint: '#5d9948', maxDepth: 8, timeMs: 1300 },
+  { id: 'nova', name: 'Nova', level: 8, role: 'q', tint: '#1f1e1c', maxDepth: 64, timeMs: 2500 },
 ];
 
 export const botById = (id: string) => BOTS.find((b) => b.id === id) ?? BOTS[2];

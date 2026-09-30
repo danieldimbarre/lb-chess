@@ -1,4 +1,5 @@
 import { Chess } from 'chess.js';
+import { msg, tcText, toLocale } from './i18n.js';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const SQUARE = /^[a-h][1-8]$/;
@@ -33,6 +34,8 @@ export class ChessService {
 
     /** @type {Map<number, any>} passport -> profile row */
     this.profiles = new Map();
+    /** passport -> 'en' | 'pt', reported by the phone app */
+    this.locales = new Map();
     /** @type {Map<string, {passport:number, tc:any, since:number}[]>} */
     this.queues = new Map();
     this.challenges = new Map();
@@ -154,7 +157,17 @@ export class ChessService {
 
   // Requests -------------------------------------------------------------------------
 
-  async bootstrap({ passport }) {
+  localeOf(passport) {
+    return this.locales.get(passport) ?? toLocale(this.cfg.defaultLocale) ?? 'en';
+  }
+
+  setLocale(passport, value) {
+    const l = toLocale(value);
+    if (l) this.locales.set(passport, l);
+  }
+
+  async bootstrap({ passport, data = {} }) {
+    this.setLocale(passport, data.locale);
     this.touch(passport);
     const me = await this.profile(passport);
     const gameId = this.playerGame.get(passport);
@@ -268,8 +281,9 @@ export class ChessService {
     const view = this.challengeView(c);
     this.push(to, 'challenge:incoming', view);
     this.push(from, 'challenge:outgoing', view);
-    const what = rematchOf ? 'wants a rematch' : `challenged you (${tc.base / 60} min${tc.inc ? ` | ${tc.inc}` : ''})`;
-    this.notify(to, 'Chess', `${fromProfile.username} ${what}`);
+    const lang = this.localeOf(to);
+    const body = rematchOf ? msg(lang, 'rematch', { name: fromProfile.username }) : msg(lang, 'challenge', { name: fromProfile.username, tc: tcText(lang, tc) });
+    this.notify(to, msg(lang, 'title'), body);
     return view;
   }
 
@@ -362,8 +376,8 @@ export class ChessService {
     this.playerGame.set(black, game.id);
     this.pushGame(game, 'game:start', (p) => this.snapshot(game, p));
     this.pushGame(game, 'queue:status', () => ({ queue: null }));
-    this.notify(white, 'Chess', `Game on! You play White vs ${bp.username}`);
-    this.notify(black, 'Chess', `Game on! You play Black vs ${wp.username}`);
+    this.notify(white, msg(this.localeOf(white), 'title'), msg(this.localeOf(white), 'gameWhite', { name: bp.username }));
+    this.notify(black, msg(this.localeOf(black), 'title'), msg(this.localeOf(black), 'gameBlack', { name: wp.username }));
     return game;
   }
 
@@ -708,6 +722,10 @@ export class ChessService {
   handlers() {
     return {
       ping: async () => ({ ok: true, serverTime: this.now() }),
+      locale: async ({ passport, data }) => {
+        this.setLocale(passport, data.locale);
+        return { ok: true };
+      },
       bootstrap: (ctx) => this.bootstrap(ctx),
       register: (ctx) => this.register(ctx),
       checkName: (ctx) => this.checkName(ctx),

@@ -1,3 +1,4 @@
+import { te } from '../i18n';
 import { reactive } from 'vue';
 
 export interface Toast {
@@ -42,30 +43,6 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-export const errorText: Record<string, string> = {
-  timeout: 'Server did not respond. Try again.',
-  network: 'Connection problem.',
-  rate_limited: 'Slow down a little.',
-  no_passport: 'Character not loaded yet.',
-  no_profile: 'Create your username first.',
-  username_taken: 'That username is already taken.',
-  username_invalid: 'Use 3-16 letters, numbers or _',
-  already_registered: 'You already have a username.',
-  in_game: 'You are already in a game.',
-  not_found: 'Player not found.',
-  offline: 'That player is offline.',
-  self: 'You cannot challenge yourself.',
-  busy: 'That player is busy in a game.',
-  already_challenged: 'You already challenged this player.',
-  expired: 'The challenge expired.',
-  invalid_tc: 'Invalid time control.',
-  illegal: 'Illegal move.',
-  not_your_turn: 'Not your turn.',
-  game_over: 'The game is over.',
-  cannot_abort: 'Too late to abort.',
-  server_error: 'Something went wrong.',
-};
-
 export function showError(error: string | undefined) {
-  toast(errorText[error ?? ''] ?? 'Something went wrong.', 'error');
+  toast(te(error), 'error');
 }

@@ -65,23 +65,50 @@ export function componentsReady(): Promise<void> {
   });
 }
 
-export function phoneNotify(title: string, content?: string) {
-  const fn = (globalThis as any).sendNotification;
-  if (typeof fn === 'function') fn({ title, content });
+/** LB Phone globals are capitalised (GetSettings, OnSettingsChange...); older builds used camelCase. */
+function phoneFn(name: string): ((...args: any[]) => any) | null {
+  const g = globalThis as any;
+  const fn = g[name] ?? g[name[0].toLowerCase() + name.slice(1)];
+  return typeof fn === 'function' ? fn : null;
 }
 
-export async function phoneTheme(): Promise<'dark' | 'light'> {
-  const fn = (globalThis as any).getSettings;
-  if (typeof fn !== 'function') return 'dark';
+export interface PhoneSettings {
+  theme: 'dark' | 'light' | null;
+  locale: string | null;
+}
+
+function pick(raw: any): PhoneSettings {
+  const theme = raw?.display?.theme;
+  return {
+    theme: theme === 'light' || theme === 'dark' ? theme : null,
+    locale: typeof raw?.locale === 'string' ? raw.locale : null,
+  };
+}
+
+/** Phone theme and language. Outside the phone, falls back to the browser language. */
+export async function phoneSettings(): Promise<PhoneSettings> {
+  const fallback: PhoneSettings = { theme: null, locale: inPhone ? null : navigator.language };
+  const fn = phoneFn('GetSettings');
   try {
-    const settings = await fn();
-    return settings?.display?.theme === 'light' ? 'light' : 'dark';
+    const raw = fn ? await fn() : (globalThis as any).settings;
+    const s = pick(raw);
+    // lb-phone also tags the app document with data-theme.
+    const attr = document.documentElement.getAttribute('data-theme');
+    return { theme: s.theme ?? (attr === 'light' || attr === 'dark' ? attr : null), locale: s.locale ?? fallback.locale };
   } catch {
-    return 'dark';
+    return fallback;
   }
 }
 
-export function onPhoneThemeChange(cb: (theme: 'dark' | 'light') => void) {
-  const fn = (globalThis as any).onSettingsChange;
-  if (typeof fn === 'function') fn((s: any) => cb(s?.display?.theme === 'light' ? 'light' : 'dark'));
+/** Calls back whenever the player changes the phone's theme or language. */
+export function onPhoneSettings(cb: (s: PhoneSettings) => void) {
+  phoneFn('OnSettingsChange')?.((raw: any) => cb(pick(raw)));
+  // Same event, in case the components helper isn't there.
+  window.addEventListener('message', (e) => {
+    if (e.data?.type === 'settingsUpdated') cb(pick(e.data.settings));
+  });
+  new MutationObserver(() => {
+    const attr = document.documentElement.getAttribute('data-theme');
+    if (attr === 'light' || attr === 'dark') cb({ theme: attr, locale: null });
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 }

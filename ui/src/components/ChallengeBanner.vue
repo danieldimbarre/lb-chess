@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import Avatar from './Avatar.vue';
 import { session, serverNow } from '../stores/session';
@@ -8,9 +9,9 @@ import { tcLabel, tcCategory } from '../lib/timeControls';
 import Icon from './Icon.vue';
 
 const now = ref(serverNow());
-let t: number | undefined;
-onMounted(() => (t = window.setInterval(() => (now.value = serverNow()), 250)));
-onBeforeUnmount(() => clearInterval(t));
+let tick: number | undefined;
+onMounted(() => (tick = window.setInterval(() => (now.value = serverNow()), 250)));
+onBeforeUnmount(() => clearInterval(tick));
 
 // Rematch offers are handled inside the game screen; don't interrupt onboarding.
 const challenge = computed(() => {
@@ -35,13 +36,13 @@ const progress = computed(() => (challenge.value ? Math.max(0, (challenge.value.
           </div>
           <div class="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[0.78rem] font-semibold text-ink-2">
             <Icon :name="tcCategory(challenge.tc).icon" :size="14" :style="{ color: tcCategory(challenge.tc).color }" />
-            {{ challenge.rematchOf ? 'Rematch' : 'Challenge' }} · {{ tcLabel(challenge.tc) }} · {{ secondsLeft }}s
+            {{ challenge.rematchOf ? t('challenge.bannerRematch') : t('challenge.banner') }} · {{ tcLabel(challenge.tc) }} · {{ secondsLeft }}s
           </div>
         </div>
-        <button class="btn btn-secondary h-10 w-10 shrink-0 p-0!" aria-label="Decline" @click="declineChallenge(challenge)">
+        <button class="btn btn-secondary h-10 w-10 shrink-0 p-0!" :aria-label="t('common.decline')" @click="declineChallenge(challenge)">
           <Icon name="x" :size="20" :stroke="2.8" />
         </button>
-        <button class="btn btn-primary h-10 shrink-0 px-4 text-[0.95rem]" @click="acceptChallenge(challenge)">Accept</button>
+        <button class="btn btn-primary h-10 shrink-0 px-4 text-[0.95rem]" @click="acceptChallenge(challenge)">{{ t('common.accept') }}</button>
       </div>
       <div class="h-[3px] bg-green transition-[width] duration-300 ease-linear" :style="{ width: `${Math.min(1, progress) * 100}%` }" />
     </div>

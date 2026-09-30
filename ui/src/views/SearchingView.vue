@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Board from '../components/Board.vue';
 import PlayerBar from '../components/PlayerBar.vue';
@@ -11,9 +12,9 @@ import { tcLabel, tcCategory } from '../lib/timeControls';
 import { START_FEN } from '../chess/util';
 
 const now = ref(serverNow());
-let t: number | undefined;
-onMounted(() => (t = window.setInterval(() => (now.value = serverNow()), 500)));
-onBeforeUnmount(() => clearInterval(t));
+let tick: number | undefined;
+onMounted(() => (tick = window.setInterval(() => (now.value = serverNow()), 500)));
+onBeforeUnmount(() => clearInterval(tick));
 
 const elapsed = computed(() => {
   const s = Math.max(0, Math.floor((now.value - (session.queue?.since ?? now.value)) / 1000));
@@ -70,19 +71,19 @@ const cat = computed(() => (session.queue ? tcCategory(session.queue.tc) : null)
             </svg>
           </div>
           <div class="rounded-xl bg-surface/90 px-4 py-2 text-center shadow-[0_10px_30px_rgba(0,0,0,.35)]">
-            <div class="font-display text-[1.05rem] font-extrabold">Searching for opponent...</div>
+            <div class="font-display text-[1.05rem] font-extrabold">{{ t('search.searching') }}</div>
             <div class="text-[0.82rem] font-semibold tabular-nums text-muted">{{ elapsed }}</div>
           </div>
         </div>
       </div>
 
       <template #bottom>
-      <PlayerBar :name="session.me?.username ?? 'You'" color="w" :captured="[]" :diff="0" :clock="session.queue ? session.queue.tc.base * 1000 : null" />
+      <PlayerBar :name="session.me?.username ?? t('common.you')" color="w" :captured="[]" :diff="0" :clock="session.queue ? session.queue.tc.base * 1000 : null" />
       </template>
     </BoardStage>
 
     <div class="px-4 pb-3 pt-2">
-      <button class="btn btn-secondary h-12 w-full text-lg" @click="cancel">Cancel</button>
+      <button class="btn btn-secondary h-12 w-full text-lg" @click="cancel">{{ t('common.cancel') }}</button>
     </div>
   </div>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { computed, ref, watch } from 'vue';
 import Board from '../components/Board.vue';
 import Icon from '../components/Icon.vue';
@@ -33,11 +34,11 @@ watch(name, (v) => {
 const hint = computed(
   () =>
     ({
-      idle: '3-16 characters. Letters, numbers and _ only.',
-      checking: 'Checking…',
-      available: 'Nice, that one is free!',
-      taken: 'Already taken. Try another.',
-      invalid: '3-16 characters. Letters, numbers and _ only.',
+      idle: t('onboarding.rules'),
+      checking: t('onboarding.checking'),
+      available: t('onboarding.available'),
+      taken: t('onboarding.taken'),
+      invalid: t('onboarding.rules'),
     })[status.value],
 );
 
@@ -71,18 +72,18 @@ const heroFen = '1n1Rkb1r/p4ppp/4q3/4p1B1/4P3/8/PPP2PPP/2K5 b k - 1 17';
     <div class="relative mt-auto px-6 pb-4">
       <div class="stagger">
         <div class="font-display text-[2.1rem] font-extrabold leading-[1.05] tracking-tight">
-          Play chess<br /><span class="text-green">on your phone.</span>
+          {{ t('onboarding.title1') }}<br /><span class="text-green">{{ t('onboarding.title2') }}</span>
         </div>
-        <p class="mt-3 text-[0.95rem] text-ink-2">Pick a username. It’s how other players find, challenge and rank you.</p>
+        <p class="mt-3 text-[0.95rem] text-ink-2">{{ t('onboarding.intro') }}</p>
 
         <label class="mt-6 block">
-          <span class="mb-2 block text-[0.78rem] font-bold uppercase tracking-wider text-muted">Username</span>
+          <span class="mb-2 block text-[0.78rem] font-bold uppercase tracking-wider text-muted">{{ t('onboarding.username') }}</span>
           <div class="relative">
             <input
               v-model="name"
               class="field pr-11 text-lg!"
               maxlength="16"
-              placeholder="e.g. VinewoodKnight"
+              :placeholder="t('onboarding.placeholder')"
               spellcheck="false"
               autocomplete="off"
               @keydown.enter="submit"
@@ -102,7 +103,7 @@ const heroFen = '1n1Rkb1r/p4ppp/4q3/4p1B1/4P3/8/PPP2PPP/2K5 b k - 1 17';
         </label>
 
         <button class="btn btn-primary mt-6 h-14 w-full text-xl" :disabled="status !== 'available' || busy" @click="submit">
-          {{ busy ? 'Creating…' : 'Continue' }}
+          {{ busy ? t('onboarding.creating') : t('onboarding.continue') }}
         </button>
       </div>
     </div>

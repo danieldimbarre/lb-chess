@@ -52,7 +52,7 @@ const low = computed(() => props.ms < 20000);
   background: var(--c-clock-active);
   color: var(--c-clock-ink);
 }
-[data-theme='light'] .clock-active {
+[data-app-theme='light'] .clock-active {
   color: #fff;
 }
 .clock-low {
