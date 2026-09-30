@@ -13,5 +13,6 @@ export default defineConfig({
     assetsInlineLimit: 0,
     chunkSizeWarningLimit: 900,
   },
-  server: { port: 5190 },
+  server: { port: 5190, fs: { allow: ['..'] } },
+  resolve: { dedupe: ['chess.js'] },
 });

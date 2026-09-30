@@ -3,13 +3,14 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "build": "esbuild src/index.js --bundle --platform=node --target=node16 --format=cjs --outfile=dist/server.js",
-    "test": "node --test test/"
+    "build": "esbuild src/index.js --bundle --platform=node --target=node16 --format=iife --outfile=dist/server.js",
+    "test": "node --test test/core.test.js"
   },
   "dependencies": {
     "chess.js": "^1.4.0"
   },
   "devDependencies": {
     "esbuild": "^0.28.2"
-  }
+  },
+  "type": "module"
 }

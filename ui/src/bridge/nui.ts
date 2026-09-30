@@ -30,6 +30,8 @@ export function onPush(action: string, cb: PushHandler): () => void {
 let mock: { request(name: string, data: unknown): Promise<any> } | null = null;
 
 async function getMock() {
+  // The mock (server core + simulated players) only exists in `vite dev`; production builds drop it.
+  if (!import.meta.env.DEV) return { request: async () => ({ ok: false, error: 'network' }) };
   if (!mock) mock = (await import('./mock')).createMock((action, data) => window.postMessage({ action, data }, '*'));
   return mock;
 }
