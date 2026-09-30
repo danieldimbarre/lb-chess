@@ -4348,7 +4348,7 @@
     wins: "wins DESC, games DESC"
   };
   var WHERE = {
-    games: "1 = 1",
+    games: "games > 0",
     winrate: "games >= ?",
     wins: "games > 0"
   };
@@ -4393,6 +4393,7 @@
         const me = await single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE passport = ?`, [passport]);
         if (!me) return null;
         if (sort === "games") {
+          if (!me.games) return null;
           const r2 = await single("SELECT COUNT(*) AS n FROM chess_players WHERE games > ? OR (games = ? AND wins > ?)", [me.games, me.games, me.wins]);
           return Number((r2 == null ? void 0 : r2.n) ?? 0) + 1;
         }

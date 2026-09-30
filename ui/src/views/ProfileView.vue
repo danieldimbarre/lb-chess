@@ -99,15 +99,15 @@ function open(g: GameRow) {
           <section class="grid grid-cols-3 gap-2">
             <div class="card px-2 py-3 text-center">
               <div class="font-display text-[1.35rem] font-extrabold">{{ p.games }}</div>
-              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">{{ t('profile.games') }}</div>
+              <div class="stat-label">{{ t('profile.games') }}</div>
             </div>
             <div class="card px-2 py-3 text-center">
               <div class="font-display text-[1.35rem] font-extrabold">{{ p.wins }}</div>
-              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">{{ t('profile.wins') }}</div>
+              <div class="stat-label">{{ t('profile.wins') }}</div>
             </div>
             <div class="card px-2 py-3 text-center">
               <div class="font-display text-[1.35rem] font-extrabold">{{ winRate }}%</div>
-              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">{{ t('profile.winRate') }}</div>
+              <div class="stat-label">{{ t('profile.winRate') }}</div>
             </div>
           </section>
 

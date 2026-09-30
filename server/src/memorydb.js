@@ -11,7 +11,8 @@ export function createMemoryDb() {
     winrate: (a, b) => winRate(b) - winRate(a) || b.games - a.games,
     wins: (a, b) => b.wins - a.wins || b.games - a.games,
   };
-  const eligible = (sort, minGames) => (p) => (sort === 'winrate' ? p.games >= minGames : sort === 'wins' ? p.games > 0 : true);
+  // Nobody is ranked before their first game.
+  const eligible = (sort, minGames) => (p) => (sort === 'winrate' ? p.games >= minGames : p.games > 0);
 
   return {
     async init() {},

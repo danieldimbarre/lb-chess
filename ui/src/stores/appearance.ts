@@ -14,6 +14,12 @@ function apply() {
   document.documentElement.lang = locale.value === 'pt' ? 'pt-BR' : 'en';
 }
 
+/** Applies stored choices before the first paint (phone values arrive a moment later). */
+export function applyInitial() {
+  phone.locale = navigator.language;
+  apply();
+}
+
 export async function initAppearance() {
   const s = await phoneSettings();
   if (s.theme) phone.theme = s.theme;

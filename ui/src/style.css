@@ -86,6 +86,8 @@ body {
   -webkit-font-smoothing: antialiased;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  /* Avoid one-word last lines in wrapped copy (pt-BR strings run longer). */
+  text-wrap: pretty;
 }
 
 input,
@@ -165,6 +167,19 @@ button {
   }
   .btn-danger:active:not(:disabled) {
     box-shadow: 0 1px 0 0 #9c2b1f;
+  }
+
+  /* Small caps caption under a number (stats, podium). Long translations wrap instead of overflowing. */
+  .stat-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--c-muted);
+    padding-inline: 0.25rem;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
   }
 
   .tap {

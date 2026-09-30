@@ -57,7 +57,7 @@ const medal = (rank: number) => (['#ffc234', '#c9ccd1', '#d08a4f'] as const)[ran
       <button
         v-for="t in tabs"
         :key="t.id"
-        class="relative z-1 flex-1 rounded-lg py-2 text-[0.82rem] font-bold transition-colors duration-150"
+        class="relative z-1 min-w-0 flex-1 truncate rounded-lg px-2 py-2 text-[0.8rem] font-bold transition-colors duration-150"
         :class="sort === t.id ? 'text-ink' : 'text-muted'"
         @click="load(t.id)"
       >
@@ -87,7 +87,7 @@ const medal = (rank: number) => (['#ffc234', '#c9ccd1', '#d08a4f'] as const)[ran
           </div>
           <div class="mt-1.5 w-full truncate text-center text-[0.82rem] font-bold">{{ data.rows[i].username }}</div>
           <div class="font-display text-[1.05rem] font-extrabold leading-none">{{ metric(data.rows[i]) }}</div>
-          <div class="text-[0.66rem] font-bold uppercase tracking-wide text-muted">{{ metricLabel }}</div>
+          <div class="stat-label">{{ metricLabel }}</div>
         </button>
       </div>
 
@@ -109,7 +109,7 @@ const medal = (rank: number) => (['#ffc234', '#c9ccd1', '#d08a4f'] as const)[ran
           </span>
           <span class="text-right">
             <span class="block font-display font-extrabold">{{ metric(r) }}</span>
-            <span class="block text-[0.66rem] font-bold uppercase text-muted">{{ metricLabel }}</span>
+            <span class="stat-label block pr-0!">{{ metricLabel }}</span>
           </span>
         </button>
         <div v-if="!data.rows.length" class="px-4 py-10 text-center text-[0.9rem] text-muted">{{ tr('leaderboard.empty') }}</div>

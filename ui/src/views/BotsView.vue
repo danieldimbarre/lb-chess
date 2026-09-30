@@ -73,9 +73,9 @@ function play() {
     </div>
 
     <div class="shrink-0 bg-surface px-4 pb-[calc(var(--safe-bottom)+12px)] pt-3">
-      <div class="mb-3 flex items-center gap-2">
-        <span class="w-16 text-[0.8rem] font-bold text-muted">{{ tr('bots.iPlay') }}</span>
-        <div class="flex flex-1 gap-2">
+      <div class="mb-3">
+        <span class="mb-1.5 block text-[0.72rem] font-bold uppercase tracking-wider text-muted">{{ tr('bots.iPlay') }}</span>
+        <div class="flex gap-2">
           <button
             v-for="c in (['w', 'random', 'b'] as const)"
             :key="c"
@@ -92,13 +92,13 @@ function play() {
           </button>
         </div>
       </div>
-      <div class="mb-3 flex items-center gap-2">
-        <span class="w-16 text-[0.8rem] font-bold text-muted">{{ tr('bots.timer') }}</span>
-        <div class="flex flex-1 gap-1.5 overflow-x-auto">
+      <div class="mb-3">
+        <span class="mb-1.5 block text-[0.72rem] font-bold uppercase tracking-wider text-muted">{{ tr('bots.timer') }}</span>
+        <div class="grid grid-cols-5 gap-1.5">
           <button
             v-for="(t, i) in timers"
             :key="i"
-            class="tap h-9 shrink-0 rounded-lg px-3 text-[0.8rem] font-bold"
+            class="tap h-9 min-w-0 truncate rounded-lg px-1 text-[0.76rem] font-bold"
             :class="(t === null ? prefs.botTc === null : sameTc(t, prefs.botTc)) ? 'bg-surface-3 text-ink ring-2 ring-green' : 'bg-surface-2 text-ink-2'"
             @click="prefs.botTc = t"
           >

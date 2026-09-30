@@ -76,7 +76,7 @@ const rows = [
           </span>
           <span class="min-w-0 flex-1">
             <span class="block font-display text-[1rem] font-extrabold">{{ t(r.title) }}</span>
-            <span class="block truncate text-[0.82rem] text-muted">{{ t(r.sub) }}</span>
+            <span class="line-clamp-2 block text-[0.82rem] leading-snug text-pretty text-muted">{{ t(r.sub) }}</span>
           </span>
           <span
             v-if="r.route === 'challenge' && session.incoming.length"
@@ -89,16 +89,16 @@ const rows = [
 
         <section class="card grid grid-cols-3 divide-x divide-line py-3 text-center">
           <div>
-            <div class="font-display text-xl font-extrabold">{{ me?.wins ?? 0 }}</div>
-            <div class="text-[0.72rem] font-bold uppercase tracking-wide text-muted">{{ t('home.wins') }}</div>
+            <div class="font-display text-xl font-extrabold">{{ me?.games ?? 0 }}</div>
+            <div class="stat-label">{{ t('home.games') }}</div>
           </div>
           <div>
-            <div class="font-display text-xl font-extrabold">{{ me?.games ?? 0 }}</div>
-            <div class="text-[0.72rem] font-bold uppercase tracking-wide text-muted">{{ t('home.games') }}</div>
+            <div class="font-display text-xl font-extrabold">{{ me?.wins ?? 0 }}</div>
+            <div class="stat-label">{{ t('home.wins') }}</div>
           </div>
           <div>
             <div class="font-display text-xl font-extrabold">{{ winRate }}%</div>
-            <div class="text-[0.72rem] font-bold uppercase tracking-wide text-muted">{{ t('home.winRate') }}</div>
+            <div class="stat-label">{{ t('home.winRate') }}</div>
           </div>
         </section>
       </div>

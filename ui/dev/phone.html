@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>lb-chess - phone preview</title>
+    <!--
+      Dev-only harness: reproduces how LB Phone sizes a custom app at a given game
+      resolution. LB Phone scales rem by display.size (default 0.7) x innerHeight/1080
+      (landscape) and the phone screen is ~57rem x 26.4rem.
+      Usage: /dev/phone.html?size=0.7&user=Name&pos=left   (resize the window to the game resolution)
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: linear-gradient(160deg, #3b4a5a, #1d232b 60%, #2b2418);
+        font-family: system-ui, sans-serif;
+        overflow: hidden;
+      }
+      .phone {
+        position: absolute;
+        right: 3vw;
+        bottom: 2vh;
+        padding: calc(var(--rem) * 0.9);
+        border-radius: calc(var(--rem) * 3.75);
+        background: #0b0b0c;
+        box-shadow:
+          0 0 0 calc(var(--rem) * 0.4) #d3cde4,
+          0 30px 80px rgba(0, 0, 0, 0.6);
+      }
+      .phone.left {
+        left: 24px;
+        top: 44px;
+        right: auto;
+        bottom: auto;
+      }
+      iframe {
+        display: block;
+        border: 0;
+        border-radius: calc(var(--rem) * 3);
+        background: #000;
+      }
+      .info {
+        position: absolute;
+        left: 16px;
+        top: 12px;
+        color: #cfd6de;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="info" id="info"></div>
+    <div class="phone" id="phone"><iframe id="app" title="lb-chess"></iframe></div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const size = Number(params.get('size') || 0.7);
+      const frame = document.getElementById('app');
+      // ?pos=left docks the phone top-left (handy when the preview pane crops the right side).
+      if (params.get('pos') === 'left') document.getElementById('phone').classList.add('left');
+      frame.src = '/?' + new URLSearchParams({ user: params.get('user') || 'Dimbarre' });
+
+      function layout() {
+        const w = innerWidth;
+        const h = innerHeight;
+        const scale = w < h ? size * (w / 1920) : size * (h / 1080);
+        const rem = 16 * scale;
+        document.documentElement.style.setProperty('--rem', rem + 'px');
+        const width = Math.round(26.4 * rem);
+        const height = Math.round(57 * rem);
+        frame.style.width = width + 'px';
+        frame.style.height = height + 'px';
+        document.getElementById('info').textContent = `game ${w}x${h} - phone size ${size} - app iframe ${width}x${height} css px`;
+      }
+      layout();
+      addEventListener('resize', layout);
+    </script>
+  </body>
+</html>

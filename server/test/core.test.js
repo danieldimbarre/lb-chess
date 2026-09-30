@@ -268,7 +268,7 @@ test('leaderboard win rate needs minimum games', async () => {
   assert.equal(lb.rows.length, 0);
   assert.equal(lb.me.rank, null);
   const byGames = await call('leaderboard', 1, { sort: 'games' });
-  assert.equal(byGames.rows.length, 3);
+  assert.equal(byGames.rows.length, 2); // Carol has not played yet
   assert.equal(byGames.me.rank <= 2, true);
 });
 

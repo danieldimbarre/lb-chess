@@ -75,7 +75,7 @@ const ORDER = {
   wins: 'wins DESC, games DESC',
 };
 const WHERE = {
-  games: '1 = 1',
+  games: 'games > 0',
   winrate: 'games >= ?',
   wins: 'games > 0',
 };
@@ -122,6 +122,7 @@ export function createMysqlDb() {
       const me = await single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE passport = ?`, [passport]);
       if (!me) return null;
       if (sort === 'games') {
+        if (!me.games) return null;
         const r = await single('SELECT COUNT(*) AS n FROM chess_players WHERE games > ? OR (games = ? AND wins > ?)', [me.games, me.games, me.wins]);
         return Number(r?.n ?? 0) + 1;
       }
