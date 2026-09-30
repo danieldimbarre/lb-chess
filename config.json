@@ -1,0 +1,23 @@
+{
+  "identifier": "lb-chess",
+  "name": "Chess",
+  "description": "Play chess online, challenge friends, battle bots and study positions.",
+  "developer": "CR Network",
+  "defaultApp": true,
+  "size": 48210,
+
+  "startRating": 1200,
+  "usernameMin": 3,
+  "usernameMax": 16,
+
+  "challengeExpireSeconds": 60,
+  "firstMoveSeconds": 30,
+  "disconnectGraceSeconds": 60,
+  "leaderboardMinGames": 5,
+  "leaderboardSize": 50,
+  "maxRequestsPerSecond": 15,
+
+  "minBaseMinutes": 1,
+  "maxBaseMinutes": 60,
+  "maxIncrementSeconds": 60
+}

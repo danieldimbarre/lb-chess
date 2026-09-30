@@ -1,0 +1,300 @@
+@import 'tailwindcss';
+@import '@fontsource/montserrat/600.css';
+@import '@fontsource/montserrat/700.css';
+@import '@fontsource/montserrat/800.css';
+@import '@fontsource/figtree/400.css';
+@import '@fontsource/figtree/500.css';
+@import '@fontsource/figtree/600.css';
+@import '@fontsource/figtree/700.css';
+
+@custom-variant light (&:where([data-theme='light'], [data-theme='light'] *));
+
+@theme {
+  --font-display: 'Montserrat', 'Figtree', sans-serif;
+  --font-sans: 'Figtree', 'Montserrat', sans-serif;
+
+  --color-bg: var(--c-bg);
+  --color-surface: var(--c-surface);
+  --color-surface-2: var(--c-surface-2);
+  --color-surface-3: var(--c-surface-3);
+  --color-line: var(--c-line);
+  --color-ink: var(--c-ink);
+  --color-ink-2: var(--c-ink-2);
+  --color-muted: var(--c-muted);
+  --color-green: #81b64c;
+  --color-green-hi: #a3d160;
+  --color-green-lo: #45753c;
+  --color-red: #fa412d;
+  --color-gold: #ffc234;
+  --color-blue: #5d9fd8;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root,
+[data-theme='dark'] {
+  --c-bg: #302e2b;
+  --c-surface: #262522;
+  --c-surface-2: #3c3a37;
+  --c-surface-3: #454340;
+  --c-line: rgba(255, 255, 255, 0.08);
+  --c-ink: #ffffff;
+  --c-ink-2: #c3c2c1;
+  --c-muted: #989795;
+  --c-shadow: rgba(0, 0, 0, 0.3);
+  --c-clock: #989795;
+  --c-clock-ink: #2b2927;
+  --c-clock-active: #ffffff;
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  --c-bg: #f1efeb;
+  --c-surface: #ffffff;
+  --c-surface-2: #e8e6e1;
+  --c-surface-3: #dcd9d3;
+  --c-line: rgba(0, 0, 0, 0.08);
+  --c-ink: #312e2b;
+  --c-ink-2: #56524e;
+  --c-muted: #86837e;
+  --c-shadow: rgba(0, 0, 0, 0.12);
+  --c-clock: #d6d4cf;
+  --c-clock-ink: #312e2b;
+  --c-clock-active: #312e2b;
+  color-scheme: light;
+}
+
+/* LB Phone draws the status bar and home indicator on top of the app. */
+:root {
+  --safe-top: 52px;
+  --safe-bottom: 26px;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--c-bg);
+  color: var(--c-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+button {
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
+/* chess.com style 3D buttons ---------------------------------------------- */
+
+@layer components {
+  .btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    border-radius: 10px;
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: 0.005em;
+    transition:
+      transform 120ms var(--ease-out),
+      box-shadow 120ms var(--ease-out),
+      background-color 150ms ease,
+      filter 150ms ease;
+    outline: none;
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(3px);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .btn-primary {
+    background: #81b64c;
+    color: #fff;
+    box-shadow: 0 5px 0 0 #45753c;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+  }
+  .btn-primary:active:not(:disabled) {
+    box-shadow: 0 2px 0 0 #45753c;
+  }
+
+  .btn-secondary {
+    background: var(--c-surface-2);
+    color: var(--c-ink);
+    box-shadow: 0 4px 0 0 var(--c-shadow);
+  }
+  .btn-secondary:active:not(:disabled) {
+    box-shadow: 0 1px 0 0 var(--c-shadow);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--c-ink-2);
+  }
+
+  .btn-danger {
+    background: #e2412f;
+    color: #fff;
+    box-shadow: 0 4px 0 0 #9c2b1f;
+  }
+  .btn-danger:active:not(:disabled) {
+    box-shadow: 0 1px 0 0 #9c2b1f;
+  }
+
+  .tap {
+    transition: transform 140ms var(--ease-out), background-color 150ms ease;
+  }
+  .tap:active {
+    transform: scale(0.97);
+  }
+
+  .card {
+    background: var(--c-surface);
+    border-radius: 12px;
+  }
+
+  .field {
+    width: 100%;
+    background: var(--c-surface);
+    border: 2px solid var(--c-line);
+    border-radius: 10px;
+    padding: 0.8rem 0.95rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--c-ink);
+    outline: none;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .field:focus {
+    border-color: #81b64c;
+    box-shadow: 0 0 0 3px rgba(129, 182, 76, 0.2);
+  }
+  .field::placeholder {
+    color: var(--c-muted);
+    font-weight: 500;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover:not(:disabled) {
+    background: #a3d160;
+  }
+  .btn-secondary:hover:not(:disabled) {
+    filter: brightness(1.12);
+  }
+  .hover-row:hover {
+    background: var(--c-line);
+  }
+}
+
+/* Route transitions -------------------------------------------------------- */
+
+.route-forward-enter-active,
+.route-forward-leave-active,
+.route-back-enter-active,
+.route-back-leave-active {
+  transition:
+    transform 320ms var(--ease-drawer),
+    opacity 320ms var(--ease-drawer);
+}
+.route-forward-enter-from {
+  transform: translateX(100%);
+}
+.route-forward-leave-to {
+  transform: translateX(-28%);
+  opacity: 0.4;
+}
+.route-back-enter-from {
+  transform: translateX(-28%);
+  opacity: 0.4;
+}
+.route-back-leave-to {
+  transform: translateX(100%);
+}
+.route-forward-leave-active,
+.route-back-enter-active {
+  z-index: 0;
+}
+.route-forward-enter-active,
+.route-back-leave-active {
+  z-index: 1;
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.25);
+}
+.route-fade-enter-active,
+.route-fade-leave-active {
+  transition: opacity 200ms ease, transform 200ms var(--ease-out);
+}
+.route-fade-enter-from {
+  opacity: 0;
+  transform: scale(0.985);
+}
+.route-fade-leave-to {
+  opacity: 0;
+}
+
+.stagger > * {
+  animation: rise 360ms var(--ease-out) both;
+}
+.stagger > *:nth-child(2) { animation-delay: 40ms; }
+.stagger > *:nth-child(3) { animation-delay: 80ms; }
+.stagger > *:nth-child(4) { animation-delay: 120ms; }
+.stagger > *:nth-child(5) { animation-delay: 160ms; }
+.stagger > *:nth-child(6) { animation-delay: 200ms; }
+.stagger > *:nth-child(n + 7) { animation-delay: 240ms; }
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-forward-enter-from,
+  .route-back-leave-to,
+  .route-forward-leave-to,
+  .route-back-enter-from {
+    transform: none;
+  }
+  .stagger > * {
+    animation-name: fade;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}

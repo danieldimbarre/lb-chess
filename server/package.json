@@ -1,0 +1,15 @@
+{
+  "name": "lb-chess-server",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --platform=node --target=node16 --format=cjs --outfile=dist/server.js",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "chess.js": "^1.4.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

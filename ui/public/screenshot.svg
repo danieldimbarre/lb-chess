@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 844">
+  <rect width="390" height="844" fill="#302E2B"/>
+  <text x="24" y="92" fill="#fff" font-family="Montserrat,Arial" font-weight="800" font-size="30">Chess</text>
+  <g transform="translate(15 220)">
+    <rect width="360" height="360" fill="#EBECD0"/>
+    <g fill="#739552">
+      <path d="M45 0h45v45H45zM135 0h45v45h-45zM225 0h45v45h-45zM315 0h45v45h-45zM0 45h45v45H0zM90 45h45v45H90zM180 45h45v45h-45zM270 45h45v45h-45zM45 90h45v45H45zM135 90h45v45h-45zM225 90h45v45h-45zM315 90h45v45h-45zM0 135h45v45H0zM90 135h45v45H90zM180 135h45v45h-45zM270 135h45v45h-45zM45 180h45v45H45zM135 180h45v45h-45zM225 180h45v45h-45zM315 180h45v45h-45zM0 225h45v45H0zM90 225h45v45H90zM180 225h45v45h-45zM270 225h45v45h-45zM45 270h45v45H45zM135 270h45v45h-45zM225 270h45v45h-45zM315 270h45v45h-45zM0 315h45v45H0zM90 315h45v45H90zM180 315h45v45h-45zM270 315h45v45h-45z"/>
+    </g>
+  </g>
+  <rect x="24" y="640" width="342" height="64" rx="10" fill="#81B64C"/>
+  <text x="195" y="681" text-anchor="middle" fill="#fff" font-family="Montserrat,Arial" font-weight="800" font-size="22">Play</text>
+</svg>
