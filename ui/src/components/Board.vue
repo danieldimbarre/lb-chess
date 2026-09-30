@@ -21,6 +21,8 @@ const props = withDefaults(
     premoveSquares?: string[];
     /** Board editor: any piece can go anywhere, dragging off-board removes it. */
     free?: boolean;
+    /** Extra arrows drawn by the app (hints, engine best move), as `e2e4` keys. */
+    shapes?: string[];
   }>(),
   {
     orientation: 'w',
@@ -32,6 +34,7 @@ const props = withDefaults(
     allowPremove: false,
     premoveSquares: () => [],
     free: false,
+    shapes: () => [],
   },
 );
 
@@ -466,6 +469,10 @@ const promotionColumn = computed(() => {
           stroke-linecap="butt"
         />
         <polygon :points="arrowGeometry(key).tip" fill="#ffaa00" />
+      </g>
+      <g v-for="key in shapes" :key="'s' + key" opacity="0.75">
+        <polyline :points="arrowGeometry(key).shaft" fill="none" stroke="#6fa345" stroke-width="19" stroke-linejoin="miter" />
+        <polygon :points="arrowGeometry(key).tip" fill="#6fa345" />
       </g>
     </svg>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Chess } from 'chess.js';
 import TopBar from '../components/TopBar.vue';
 import Board from '../components/Board.vue';
@@ -9,6 +9,10 @@ import Sheet from '../components/Sheet.vue';
 import Icon from '../components/Icon.vue';
 import BoardEditor from '../components/BoardEditor.vue';
 import GameNav from '../components/GameNav.vue';
+import EvalBar from '../components/EvalBar.vue';
+import { requestAnalysis, type EvalInfo } from '../engine/client';
+import { figurine } from '../chess/util';
+import { settings } from '../stores/settings';
 import { createModel } from '../chess/model';
 import { materialInfo, START_FEN } from '../chess/util';
 import { copyText, toast } from '../lib/toast';
@@ -27,6 +31,13 @@ const pgnInput = ref('');
 const board = ref<InstanceType<typeof Board>>();
 
 const material = computed(() => materialInfo(model.viewFen.value));
+
+// Moving from an earlier ply starts a new line, so the board needs that ply's legal moves.
+const viewDests = computed(() => {
+  const out: Record<string, string[]> = {};
+  for (const m of new Chess(model.viewFen.value).moves({ verbose: true })) (out[m.from] ??= []).push(m.to);
+  return out;
+});
 const top = computed<Color>(() => (orientation.value === 'w' ? 'b' : 'w'));
 const bottom = computed<Color>(() => orientation.value);
 const nameOf = (c: Color) => (c === 'w' ? props.white || 'White' : props.black || 'Black');
@@ -92,6 +103,62 @@ function loadPgn() {
   pgnInput.value = '';
 }
 
+// Engine -----------------------------------------------------------------------------
+
+const engineOn = ref(true);
+const evalInfo = ref<EvalInfo | null>(null);
+let evalTimer: number | undefined;
+
+function runEngine() {
+  clearTimeout(evalTimer);
+  if (!engineOn.value || editing.value) return;
+  const fen = model.state.initialFen;
+  const moves = model.state.moves.slice(0, model.state.ply).map((m) => m.from + m.to + (m.promotion ?? ''));
+  const viewFen = model.viewFen.value;
+  evalTimer = window.setTimeout(() => {
+    const c = new Chess(viewFen);
+    if (c.isGameOver()) {
+      // Terminal position: ±10000 marks a finished game, 0 a draw.
+      evalInfo.value = { cp: c.isCheckmate() ? (c.turn() === 'w' ? -10000 : 10000) : 0, mate: null, depth: 0, pv: [] };
+      return;
+    }
+    requestAnalysis(fen, moves, 1500, (e) => {
+      if (model.viewFen.value === viewFen) evalInfo.value = e;
+    });
+  }, 180);
+}
+
+watch(() => [model.viewFen.value, engineOn.value, editing.value], runEngine, { immediate: true });
+onBeforeUnmount(() => clearTimeout(evalTimer));
+
+const bestLine = computed(() => {
+  const e = evalInfo.value;
+  if (!e || !e.pv.length) return '';
+  const c = new Chess(model.viewFen.value);
+  const sans: string[] = [];
+  for (const uci of e.pv.slice(0, 8)) {
+    try {
+      const m = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] });
+      sans.push(settings.figurine ? figurine(m.san) : m.san);
+    } catch {
+      break;
+    }
+  }
+  return sans.join(' ');
+});
+
+const evalText = computed(() => {
+  const e = evalInfo.value;
+  if (!e) return '…';
+  if (e.mate !== null) return `${e.mate > 0 ? '+' : '-'}M${Math.abs(e.mate)}`;
+  if (Math.abs(e.cp) >= 10000) return e.cp > 0 ? '1-0' : '0-1';
+  if (!e.depth && !e.cp) return '½-½';
+  const v = e.cp / 100;
+  return `${v > 0 ? '+' : ''}${v.toFixed(2)}`;
+});
+
+const engineArrow = computed(() => (engineOn.value && evalInfo.value?.pv[0] ? [evalInfo.value.pv[0].slice(0, 4)] : []));
+
 function reset() {
   menu.value = false;
   model.load(START_FEN);
@@ -103,6 +170,9 @@ function reset() {
   <div class="flex h-full flex-col bg-bg pt-(--safe-top) pb-(--safe-bottom)">
     <TopBar :title="editing ? 'Setup position' : 'Analysis'">
       <template v-if="!editing">
+        <button class="tap flex size-10 items-center justify-center rounded-full" :class="engineOn ? 'text-green' : 'text-muted'" aria-label="Toggle engine" @click="engineOn = !engineOn">
+          <Icon name="analysis" />
+        </button>
         <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" aria-label="Flip board" @click="flip">
           <Icon name="flip" />
         </button>
@@ -121,19 +191,30 @@ function reset() {
       <MoveList :moves="model.state.moves" :ply="model.state.ply" :start-black="model.state.initialFen.split(' ')[1] === 'b'" :start-number="Number(model.state.initialFen.split(' ')[5]) || 1" @goto="model.goto" />
       <div class="flex min-h-0 flex-1 flex-col justify-center">
         <PlayerBar :name="nameOf(top)" :color="top" :captured="material.captured[top]" :diff="top === 'w' ? material.diff : -material.diff" :avatar-role="'k'" :avatar-tint="top === 'w' ? '#d9d6d0' : '#1f1e1c'" />
-        <Board
-          ref="board"
-          :fen="model.viewFen.value"
-          :orientation="orientation"
-          movable="both"
-          :turn="model.viewTurn.value"
-          :dests="model.atHead.value ? model.dests.value : {}"
-          :last-move="model.lastMove.value"
-          :check="model.check.value"
-          @move="onMove"
-        />
+        <div class="flex gap-1" :class="engineOn ? 'pl-1' : ''">
+          <EvalBar v-if="engineOn" :cp="evalInfo?.cp ?? 0" :mate="evalInfo?.mate ?? null" :orientation="orientation" />
+          <div class="min-w-0 flex-1">
+            <Board
+              ref="board"
+              :fen="model.viewFen.value"
+              :orientation="orientation"
+              movable="both"
+              :turn="model.viewTurn.value"
+              :dests="model.viewFen.value === model.headFen.value ? model.dests.value : viewDests"
+              :last-move="model.lastMove.value"
+              :check="model.check.value"
+              :shapes="engineArrow"
+              @move="onMove"
+            />
+          </div>
+        </div>
         <PlayerBar :name="nameOf(bottom)" :color="bottom" :captured="material.captured[bottom]" :diff="bottom === 'w' ? material.diff : -material.diff" :avatar-role="'k'" :avatar-tint="bottom === 'w' ? '#d9d6d0' : '#1f1e1c'" />
-        <div class="h-6 text-center text-[0.84rem] font-semibold" :class="status ? 'text-gold' : 'text-muted'">
+        <div v-if="engineOn" class="mx-3 flex h-8 items-center gap-2 overflow-hidden rounded-md bg-surface px-2 text-[0.8rem]">
+          <span class="shrink-0 rounded bg-surface-3 px-1.5 py-0.5 font-display font-extrabold tabular-nums">{{ evalText }}</span>
+          <span class="truncate font-semibold text-ink-2">{{ bestLine }}</span>
+          <span v-if="evalInfo?.depth" class="ml-auto shrink-0 text-[0.68rem] text-muted">d{{ evalInfo.depth }}</span>
+        </div>
+        <div class="h-6 pt-1 text-center text-[0.84rem] font-semibold" :class="status ? 'text-gold' : 'text-muted'">
           {{ status ?? (model.viewTurn.value === 'w' ? 'White to move' : 'Black to move') }}
         </div>
       </div>
@@ -149,6 +230,7 @@ function reset() {
       <div class="flex flex-col px-2 pb-3">
         <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="copy('fen')"><Icon name="copy" />Copy FEN</button>
         <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="copy('pgn')"><Icon name="share" />Copy PGN</button>
+        <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; push('bots', { fen: model.viewFen.value })"><Icon name="bot" />Play vs bot from here</button>
         <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="reset"><Icon name="refresh" />Reset to start</button>
         <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; push('settings')"><Icon name="settings" />Board settings</button>
         <div class="px-3 pt-3">

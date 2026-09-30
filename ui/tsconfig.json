@@ -13,5 +13,5 @@
     "allowImportingTsExtensions": true,
     "types": ["vite/client"]
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.vue"]
 }
