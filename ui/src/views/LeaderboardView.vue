@@ -7,13 +7,13 @@ import { request } from '../bridge/nui';
 import { push } from '../stores/router';
 import type { LeaderboardRow } from '../types';
 
-type Sort = 'games' | 'winrate' | 'rating';
+type Sort = 'games' | 'winrate' | 'wins';
 type Row = LeaderboardRow & { online?: boolean };
 
 const tabs: { id: Sort; label: string }[] = [
   { id: 'games', label: 'Most Games' },
   { id: 'winrate', label: 'Win Rate' },
-  { id: 'rating', label: 'Rating' },
+  { id: 'wins', label: 'Most Wins' },
 ];
 
 const sort = ref<Sort>('games');
@@ -34,8 +34,8 @@ onMounted(() => load('games'));
 const data = computed(() => cache.value[sort.value]);
 const tabIndex = computed(() => tabs.findIndex((t) => t.id === sort.value));
 
-const metric = (r: Row) => (sort.value === 'games' ? `${r.games}` : sort.value === 'winrate' ? `${r.winRate.toFixed(1)}%` : `${r.rating}`);
-const metricLabel = computed(() => (sort.value === 'games' ? 'games' : sort.value === 'winrate' ? 'win rate' : 'rating'));
+const metric = (r: Row) => (sort.value === 'games' ? `${r.games}` : sort.value === 'winrate' ? `${r.winRate.toFixed(1)}%` : `${r.wins}`);
+const metricLabel = computed(() => (sort.value === 'games' ? 'games' : sort.value === 'winrate' ? 'win rate' : 'wins'));
 const medal = (rank: number) => (['#ffc234', '#c9ccd1', '#d08a4f'] as const)[rank - 1];
 </script>
 
@@ -122,7 +122,7 @@ const medal = (rank: number) => (['#ffc234', '#c9ccd1', '#d08a4f'] as const)[ran
       <Avatar :name="data.me.username" :size="34" />
       <span class="min-w-0 flex-1">
         <span class="block truncate font-bold">You</span>
-        <span class="block text-[0.74rem] text-ink-2">{{ data.me.rank ? `Rank #${data.me.rank}` : sort === 'winrate' ? `Play ${data.minGames} games to rank` : 'Play a rated game to rank' }}</span>
+        <span class="block text-[0.74rem] text-ink-2">{{ data.me.rank ? `Rank #${data.me.rank}` : sort === 'winrate' ? `Play ${data.minGames} games to rank` : 'Play a game to rank' }}</span>
       </span>
       <span class="font-display font-extrabold">{{ metric(data.me) }}</span>
     </div>

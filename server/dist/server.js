@@ -86,12 +86,12 @@
         C.prototype = parent.prototype;
         child.prototype = new C();
       }
-      function peg$SyntaxError(message, expected2, found, location) {
+      function peg$SyntaxError(message, expected, found, location) {
         var self = Error.call(this, message);
         if (Object.setPrototypeOf) {
           Object.setPrototypeOf(self, peg$SyntaxError.prototype);
         }
-        self.expected = expected2;
+        self.expected = expected;
         self.found = found;
         self.location = location;
         self.name = "SyntaxError";
@@ -134,7 +134,7 @@
         }
         return str;
       };
-      peg$SyntaxError.buildMessage = function(expected2, found) {
+      peg$SyntaxError.buildMessage = function(expected, found) {
         var DESCRIBE_EXPECTATION_FNS = {
           literal: function(expectation) {
             return '"' + literalEscape(expectation.text) + '"';
@@ -175,8 +175,8 @@
         function describeExpectation(expectation) {
           return DESCRIBE_EXPECTATION_FNS[expectation.type](expectation);
         }
-        function describeExpected(expected3) {
-          var descriptions = expected3.map(describeExpectation);
+        function describeExpected(expected2) {
+          var descriptions = expected2.map(describeExpectation);
           var i, j;
           descriptions.sort();
           if (descriptions.length > 0) {
@@ -200,7 +200,7 @@
         function describeFound(found2) {
           return found2 ? '"' + literalEscape(found2) + '"' : "end of input";
         }
-        return "Expected " + describeExpected(expected2) + " but " + describeFound(found) + " found.";
+        return "Expected " + describeExpected(expected) + " but " + describeFound(found) + " found.";
       };
       function peg$parse(input, options) {
         options = options !== void 0 ? options : {};
@@ -382,7 +382,7 @@
           };
           return res;
         }
-        function peg$fail(expected2) {
+        function peg$fail(expected) {
           if (peg$currPos < peg$maxFailPos) {
             return;
           }
@@ -390,12 +390,12 @@
             peg$maxFailPos = peg$currPos;
             peg$maxFailExpected = [];
           }
-          peg$maxFailExpected.push(expected2);
+          peg$maxFailExpected.push(expected);
         }
-        function peg$buildStructuredError(expected2, found, location) {
+        function peg$buildStructuredError(expected, found, location) {
           return new peg$SyntaxError(
-            peg$SyntaxError.buildMessage(expected2, found),
-            expected2,
+            peg$SyntaxError.buildMessage(expected, found),
+            expected,
             found,
             location
           );
@@ -3582,25 +3582,6 @@
 
   // src/core.js
   var import_chess = __toESM(require_chess(), 1);
-
-  // src/elo.js
-  function kFactor(games) {
-    if (games < 20) return 40;
-    if (games < 60) return 28;
-    return 20;
-  }
-  function expected(ra, rb) {
-    return 1 / (1 + 10 ** ((rb - ra) / 400));
-  }
-  function ratingDeltas(white, black, result) {
-    const sw = result === "1-0" ? 1 : result === "0-1" ? 0 : 0.5;
-    const ew = expected(white.rating, black.rating);
-    const w = Math.round(kFactor(white.games) * (sw - ew));
-    const b = Math.round(kFactor(black.games) * (1 - sw - (1 - ew)));
-    return { w, b };
-  }
-
-  // src/core.js
   var START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   var SQUARE = /^[a-h][1-8]$/;
   var USERNAME = /^[A-Za-z0-9_]+$/;
@@ -3637,7 +3618,7 @@
     }
     publicProfile(p) {
       if (!p) return null;
-      return { username: p.username, rating: p.rating, games: p.games, wins: p.wins, losses: p.losses, draws: p.draws, peak: p.peak, createdAt: p.createdAt };
+      return { username: p.username, games: p.games, wins: p.wins, losses: p.losses, draws: p.draws, createdAt: p.createdAt };
     }
     validTc(tc) {
       if (!tc || typeof tc !== "object") return null;
@@ -3650,7 +3631,7 @@
       return { base, inc };
     }
     playerRef(p) {
-      return { username: p.username, rating: p.rating };
+      return { username: p.username };
     }
     challengeView(c) {
       return {
@@ -3684,7 +3665,6 @@
         status: game.status,
         result: game.result,
         reason: game.reason,
-        ratingDelta: game.ratingDelta,
         rematch: game.rematch,
         disconnectDeadline: game.disconnect[other(this.colorOf(game, passport) ?? "w")] ?? null
       };
@@ -3748,7 +3728,7 @@
       const username = String(data.username ?? "").trim();
       if (username.length < this.cfg.usernameMin || username.length > this.cfg.usernameMax || !USERNAME.test(username)) return fail("username_invalid");
       try {
-        const row = await this.db.createPlayer(passport, username, this.cfg.startRating);
+        const row = await this.db.createPlayer(passport, username);
         this.profiles.set(passport, row);
         return { ok: true, me: this.publicProfile(row) };
       } catch (err) {
@@ -3905,7 +3885,6 @@
         status: "playing",
         result: void 0,
         reason: void 0,
-        ratingDelta: void 0,
         rematch: null,
         disconnect: { w: null, b: null },
         startedAt: now
@@ -4060,7 +4039,6 @@
       this.playerGame.delete(game.black);
       if (reason === "aborted") {
         game.result = void 0;
-        game.ratingDelta = { w: 0, b: 0 };
       } else {
         game.result = result;
         await this.applyResult(game, result, reason);
@@ -4069,7 +4047,6 @@
         id: game.id,
         result: game.result,
         reason,
-        ratingDelta: game.ratingDelta,
         clocks: { ...game.clocks },
         me: this.publicProfile(this.profiles.get(p))
       }));
@@ -4078,19 +4055,15 @@
     async applyResult(game, result, reason) {
       const wp = await this.profile(game.white);
       const bp = await this.profile(game.black);
-      const delta = ratingDeltas(wp, bp, result);
-      game.ratingDelta = delta;
-      const update = (p, d, score) => {
-        p.rating = Math.max(100, p.rating + d);
-        p.peak = Math.max(p.peak ?? p.rating, p.rating);
+      const update = (p, score) => {
         p.games += 1;
         if (score === 1) p.wins += 1;
         else if (score === 0) p.losses += 1;
         else p.draws += 1;
       };
       const sw = result === "1-0" ? 1 : result === "0-1" ? 0 : 0.5;
-      update(wp, delta.w, sw);
-      update(bp, delta.b, 1 - sw);
+      update(wp, sw);
+      update(bp, 1 - sw);
       const pgnGame = game.chess;
       pgnGame.setHeader("Event", "LB Chess");
       pgnGame.setHeader("Site", "Los Santos");
@@ -4098,8 +4071,6 @@
       pgnGame.setHeader("White", game.players.w.username);
       pgnGame.setHeader("Black", game.players.b.username);
       pgnGame.setHeader("Result", result);
-      pgnGame.setHeader("WhiteElo", String(game.players.w.rating));
-      pgnGame.setHeader("BlackElo", String(game.players.b.rating));
       pgnGame.setHeader("TimeControl", `${game.tc.base}+${game.tc.inc}`);
       pgnGame.setHeader("Termination", reason);
       try {
@@ -4110,10 +4081,6 @@
           black: game.black,
           whiteName: game.players.w.username,
           blackName: game.players.b.username,
-          whiteRating: game.players.w.rating,
-          blackRating: game.players.b.rating,
-          whiteDelta: delta.w,
-          blackDelta: delta.b,
           result,
           reason,
           tc: `${game.tc.base}+${game.tc.inc}`,
@@ -4132,7 +4099,7 @@
     }
     // Social ---------------------------------------------------------------------------------
     async leaderboard({ passport, data }) {
-      const sort = ["games", "winrate", "rating"].includes(data.sort) ? data.sort : "games";
+      const sort = ["games", "winrate", "wins"].includes(data.sort) ? data.sort : "games";
       const min = this.cfg.leaderboardMinGames;
       const rows = await this.db.leaderboard(sort, min, this.cfg.leaderboardSize);
       const me = await this.profile(passport);
@@ -4147,7 +4114,6 @@
     row(p) {
       return {
         username: p.username,
-        rating: p.rating,
         games: p.games,
         wins: p.wins,
         losses: p.losses,
@@ -4167,15 +4133,11 @@
         isMe: target.passport === passport,
         online: this.isOnline(target.passport),
         playing: this.playerGame.has(target.passport),
-        rank: await this.db.rankOf(target.passport, "rating", this.cfg.leaderboardMinGames),
+        rank: await this.db.rankOf(target.passport, "games", this.cfg.leaderboardMinGames),
         games: games.map((g) => ({
           id: g.id,
           white: g.whiteName,
           black: g.blackName,
-          whiteRating: g.whiteRating,
-          blackRating: g.blackRating,
-          whiteDelta: g.whiteDelta,
-          blackDelta: g.blackDelta,
           result: g.result,
           reason: g.reason,
           tc: g.tc,
@@ -4191,7 +4153,7 @@
       const rows = await this.db.searchPlayers(q, 8);
       return {
         ok: true,
-        players: rows.filter((p) => p.passport !== passport).map((p) => ({ username: p.username, rating: p.rating, online: this.isOnline(p.passport), playing: this.playerGame.has(p.passport) }))
+        players: rows.filter((p) => p.passport !== passport).map((p) => ({ username: p.username, online: this.isOnline(p.passport), playing: this.playerGame.has(p.passport) }))
       };
     }
     // Lifecycle --------------------------------------------------------------------------------
@@ -4281,8 +4243,6 @@
     `CREATE TABLE IF NOT EXISTS chess_players (
     passport INT NOT NULL PRIMARY KEY,
     username VARCHAR(16) NOT NULL,
-    rating INT NOT NULL DEFAULT 1200,
-    peak INT NOT NULL DEFAULT 1200,
     games INT NOT NULL DEFAULT 0,
     wins INT NOT NULL DEFAULT 0,
     losses INT NOT NULL DEFAULT 0,
@@ -4290,7 +4250,7 @@
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_chess_username (username),
     KEY idx_chess_games (games),
-    KEY idx_chess_rating (rating)
+    KEY idx_chess_wins (wins)
   ) DEFAULT CHARSET=utf8mb4`,
     `CREATE TABLE IF NOT EXISTS chess_games (
     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -4298,10 +4258,6 @@
     black INT NOT NULL,
     white_name VARCHAR(16) NOT NULL,
     black_name VARCHAR(16) NOT NULL,
-    white_rating INT NOT NULL,
-    black_rating INT NOT NULL,
-    white_delta INT NOT NULL DEFAULT 0,
-    black_delta INT NOT NULL DEFAULT 0,
     result VARCHAR(7) NOT NULL,
     reason VARCHAR(24) NOT NULL,
     time_control VARCHAR(12) NOT NULL,
@@ -4312,17 +4268,21 @@
     KEY idx_chess_black (black)
   ) DEFAULT CHARSET=utf8mb4`
   ];
-  var PLAYER_COLS = "passport, username, rating, peak, games, wins, losses, draws, UNIX_TIMESTAMP(created_at) * 1000 AS createdAt";
+  var LEGACY_COLUMNS = [
+    ["chess_players", "rating"],
+    ["chess_players", "peak"],
+    ["chess_games", "white_rating"],
+    ["chess_games", "black_rating"],
+    ["chess_games", "white_delta"],
+    ["chess_games", "black_delta"]
+  ];
+  var PLAYER_COLS = "passport, username, games, wins, losses, draws, UNIX_TIMESTAMP(created_at) * 1000 AS createdAt";
   var mapGame = (r) => ({
     id: r.id,
     white: r.white,
     black: r.black,
     whiteName: r.white_name,
     blackName: r.black_name,
-    whiteRating: r.white_rating,
-    blackRating: r.black_rating,
-    whiteDelta: r.white_delta,
-    blackDelta: r.black_delta,
     result: r.result,
     reason: r.reason,
     tc: r.time_control,
@@ -4331,31 +4291,33 @@
     createdAt: Number(r.createdAt)
   });
   var ORDER = {
-    games: "games DESC, wins DESC, rating DESC",
+    games: "games DESC, wins DESC",
     winrate: "(wins / games) DESC, games DESC",
-    rating: "rating DESC, games DESC"
+    wins: "wins DESC, games DESC"
   };
   var WHERE = {
     games: "1 = 1",
     winrate: "games >= ?",
-    rating: "games > 0"
+    wins: "games > 0"
   };
   function createMysqlDb() {
     return {
       async init() {
         for (const sql of SCHEMA) await query(sql);
+        for (const [table, column] of LEGACY_COLUMNS) {
+          const found = await single("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?", [table, column]);
+          if (Number(found == null ? void 0 : found.n)) await query(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+        }
       },
       getPlayer: (passport) => single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE passport = ?`, [passport]),
       getPlayerByName: (username) => single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE username = ?`, [username]),
-      async createPlayer(passport, username, rating) {
-        const res = await query("INSERT IGNORE INTO chess_players (passport, username, rating, peak) VALUES (?, ?, ?, ?)", [passport, username, rating, rating]);
+      async createPlayer(passport, username) {
+        const res = await query("INSERT IGNORE INTO chess_players (passport, username) VALUES (?, ?)", [passport, username]);
         if (!res || !res.affectedRows) throw Object.assign(new Error("dup"), { code: "ER_DUP_ENTRY" });
         return single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE passport = ?`, [passport]);
       },
       async updatePlayer(passport, f) {
-        await query("UPDATE chess_players SET rating = ?, peak = ?, games = ?, wins = ?, losses = ?, draws = ? WHERE passport = ?", [
-          f.rating,
-          f.peak,
+        await query("UPDATE chess_players SET games = ?, wins = ?, losses = ?, draws = ? WHERE passport = ?", [
           f.games,
           f.wins,
           f.losses,
@@ -4365,9 +4327,9 @@
       },
       async insertGame(g) {
         const res = await query(
-          `INSERT INTO chess_games (white, black, white_name, black_name, white_rating, black_rating, white_delta, black_delta, result, reason, time_control, moves, pgn)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [g.white, g.black, g.whiteName, g.blackName, g.whiteRating, g.blackRating, g.whiteDelta, g.blackDelta, g.result, g.reason, g.tc, g.moves, g.pgn]
+          `INSERT INTO chess_games (white, black, white_name, black_name, result, reason, time_control, moves, pgn)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [g.white, g.black, g.whiteName, g.blackName, g.result, g.reason, g.tc, g.moves, g.pgn]
         );
         return (res == null ? void 0 : res.insertId) ?? 0;
       },
@@ -4393,7 +4355,7 @@
           return Number((r2 == null ? void 0 : r2.n) ?? 0) + 1;
         }
         if (!me.games) return null;
-        const r = await single("SELECT COUNT(*) AS n FROM chess_players WHERE games > 0 AND rating > ?", [me.rating]);
+        const r = await single("SELECT COUNT(*) AS n FROM chess_players WHERE games > 0 AND (wins > ? OR (wins = ? AND games > ?))", [me.wins, me.wins, me.games]);
         return Number((r == null ? void 0 : r.n) ?? 0) + 1;
       },
       async recentGames(passport, limit) {

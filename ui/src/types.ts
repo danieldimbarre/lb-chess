@@ -9,18 +9,15 @@ export interface TimeControl {
 
 export interface Profile {
   username: string;
-  rating: number;
   games: number;
   wins: number;
   losses: number;
   draws: number;
-  peak?: number;
   createdAt?: number;
 }
 
 export interface GamePlayer {
   username: string;
-  rating: number;
   connected?: boolean;
 }
 
@@ -62,7 +59,6 @@ export interface GameSnapshot {
   status: 'playing' | 'ended';
   result?: GameResult;
   reason?: EndReason;
-  ratingDelta?: { w: number; b: number };
   rematch?: { by: Color; challengeId: string } | null;
   disconnectDeadline?: number | null;
 }
@@ -81,7 +77,6 @@ export interface Challenge {
 export interface LeaderboardRow {
   rank: number;
   username: string;
-  rating: number;
   games: number;
   wins: number;
   losses: number;
@@ -93,8 +88,6 @@ export interface HistoryGame {
   id: number;
   white: string;
   black: string;
-  whiteRating: number;
-  blackRating: number;
   result: GameResult;
   reason: EndReason;
   tc: string;

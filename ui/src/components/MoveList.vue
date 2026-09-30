@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import type { MoveRecord } from '../types';
-import { figurine } from '../chess/util';
-import { settings } from '../stores/settings';
+import San from './San.vue';
 
 const props = defineProps<{ moves: MoveRecord[]; ply: number; startBlack?: boolean; startNumber?: number }>();
 const emit = defineEmits<{ goto: [ply: number] }>();
@@ -12,7 +11,7 @@ const rows = computed(() => {
   let num = props.startNumber ?? 1;
   let i = 0;
   if (props.startBlack && props.moves.length) {
-    out.push({ num, items: [{ san: '…', ply: -1 }, { san: props.moves[0].san, ply: 1 }] });
+    out.push({ num, items: [{ san: '...', ply: -1 }, { san: props.moves[0].san, ply: 1 }] });
     i = 1;
     num++;
   }
@@ -37,8 +36,6 @@ watch(
   },
   { immediate: true },
 );
-
-const fmt = (san: string) => (settings.figurine ? figurine(san) : san);
 </script>
 
 <template>
@@ -55,7 +52,7 @@ const fmt = (san: string) => (settings.figurine ? figurine(san) : san);
         :disabled="it.ply < 0"
         @click="emit('goto', it.ply)"
       >
-        {{ fmt(it.san) }}
+        <San :san="it.san" />
       </button>
     </template>
   </div>

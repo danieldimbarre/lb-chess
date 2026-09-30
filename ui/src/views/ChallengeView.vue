@@ -14,8 +14,8 @@ import { pieceUrl } from '../chess/pieces';
 const props = defineProps<{ username?: string }>();
 
 const query = ref(props.username ?? '');
-const results = ref<{ username: string; rating: number; online: boolean; playing: boolean }[]>([]);
-const selected = ref<{ username: string; rating: number; online: boolean; playing: boolean } | null>(null);
+const results = ref<{ username: string; online: boolean; playing: boolean }[]>([]);
+const selected = ref<{ username: string; online: boolean; playing: boolean } | null>(null);
 const color = ref<'w' | 'random' | 'b'>('random');
 const sending = ref(false);
 let timer: number | undefined;
@@ -84,7 +84,7 @@ const canSend = computed(() => !!(selected.value ?? query.value.trim()) && !send
           <div v-for="c in session.incoming" :key="c.id" class="card flex items-center gap-3 p-3">
             <Avatar :name="c.from.username" :size="40" />
             <div class="min-w-0 flex-1 leading-tight">
-              <div class="truncate font-bold">{{ c.from.username }} <span class="font-semibold text-muted">({{ c.from.rating }})</span></div>
+              <div class="truncate font-bold">{{ c.from.username }}</div>
               <div class="text-[0.8rem] font-semibold text-ink-2">{{ tcLabel(c.tc) }} · {{ left(c.expiresAt) }}s</div>
             </div>
             <button class="btn btn-secondary size-10 p-0!" aria-label="Decline" @click="declineChallenge(c)"><Icon name="x" :size="20" :stroke="2.8" /></button>
@@ -102,7 +102,7 @@ const canSend = computed(() => !!(selected.value ?? query.value.trim()) && !send
           <div v-if="results.length && !selected" class="absolute inset-x-0 top-[calc(100%+6px)] z-10 overflow-hidden rounded-xl bg-surface-2 shadow-[0_12px_32px_rgba(0,0,0,.4)]">
             <button v-for="p in results" :key="p.username" class="hover-row flex w-full items-center gap-3 px-3 py-2.5 text-left" @click="choose(p)">
               <Avatar :name="p.username" :size="30" />
-              <span class="flex-1 truncate font-semibold">{{ p.username }} <span class="font-normal text-muted">({{ p.rating }})</span></span>
+              <span class="flex-1 truncate font-semibold">{{ p.username }}</span>
               <span class="size-2 rounded-full" :class="p.playing ? 'bg-gold' : p.online ? 'bg-green' : 'bg-surface-3'" />
             </button>
           </div>
@@ -114,7 +114,7 @@ const canSend = computed(() => !!(selected.value ?? query.value.trim()) && !send
             <div class="min-w-0 flex-1 leading-tight">
               <div class="truncate font-bold">{{ selected.username }}</div>
               <div class="text-[0.8rem] font-semibold" :class="selected.playing ? 'text-gold' : selected.online ? 'text-green' : 'text-muted'">
-                {{ selected.playing ? 'Playing a game' : selected.online ? 'Online' : 'Offline' }} · {{ selected.rating }}
+                {{ selected.playing ? 'Playing a game' : selected.online ? 'Online' : 'Offline' }}
               </div>
             </div>
             <button class="tap text-[0.8rem] font-bold text-ink-2" @click="push('profile', { username: selected.username })">Profile</button>

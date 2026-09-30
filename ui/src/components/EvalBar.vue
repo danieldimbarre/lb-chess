@@ -7,6 +7,7 @@ const props = defineProps<{ cp: number; mate: number | null; orientation: Color 
 // Map centipawns to white's share of the bar (sigmoid like chess.com, clamped).
 const whiteShare = computed(() => {
   if (props.mate !== null) return props.mate > 0 ? 100 : props.mate < 0 ? 0 : 50;
+  if (Math.abs(props.cp) >= 10000) return props.cp > 0 ? 100 : 0;
   const x = props.cp / 100;
   const s = 50 + 50 * (2 / (1 + Math.exp(-0.45 * x)) - 1);
   return Math.max(4, Math.min(96, s));
@@ -14,6 +15,8 @@ const whiteShare = computed(() => {
 
 const label = computed(() => {
   if (props.mate !== null) return props.mate === 0 ? '#' : `M${Math.abs(props.mate)}`;
+  // ±10000 marks a finished game (checkmate on the board).
+  if (Math.abs(props.cp) >= 10000) return '#';
   const v = Math.abs(props.cp / 100);
   return v >= 10 ? v.toFixed(0) : v.toFixed(1);
 });

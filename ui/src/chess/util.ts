@@ -172,11 +172,6 @@ export function materialInfo(fen: string, startFen: string = START_FEN) {
   return { captured, diff: score };
 }
 
-const FIGURINES: Record<string, string> = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞' };
-export function figurine(san: string): string {
-  return san.replace(/[KQRBN]/g, (m) => FIGURINES[m]);
-}
-
 export function kingSquare(board: BoardMap, color: Color): string | null {
   for (const [sq, p] of board) if (p.role === 'k' && p.color === color) return sq;
   return null;

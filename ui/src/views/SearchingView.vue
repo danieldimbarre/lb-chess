@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Board from '../components/Board.vue';
 import PlayerBar from '../components/PlayerBar.vue';
 import Icon from '../components/Icon.vue';
+import BoardStage from '../components/BoardStage.vue';
 import { session, serverNow } from '../stores/session';
 import { leaveQueue } from '../stores/online';
 import { reset } from '../stores/router';
@@ -42,7 +43,8 @@ const cat = computed(() => (session.queue ? tcCategory(session.queue.tc) : null)
       {{ session.queue ? tcLabel(session.queue.tc) : '' }}
     </header>
 
-    <div class="flex min-h-0 flex-1 flex-col justify-center">
+    <BoardStage>
+      <template #top>
       <div class="flex h-[3.2rem] items-center gap-2.5 px-3">
         <div class="skeleton size-[38px] rounded-[6px]" />
         <div class="flex-1">
@@ -53,6 +55,7 @@ const cat = computed(() => (session.queue ? tcCategory(session.queue.tc) : null)
           {{ session.queue ? `${Math.floor(session.queue.tc.base / 60)}:${String(session.queue.tc.base % 60).padStart(2, '0')}` : '' }}
         </div>
       </div>
+      </template>
 
       <div class="relative">
         <div class="opacity-45 saturate-50">
@@ -67,14 +70,16 @@ const cat = computed(() => (session.queue ? tcCategory(session.queue.tc) : null)
             </svg>
           </div>
           <div class="rounded-xl bg-surface/90 px-4 py-2 text-center shadow-[0_10px_30px_rgba(0,0,0,.35)]">
-            <div class="font-display text-[1.05rem] font-extrabold">Searching for opponent…</div>
+            <div class="font-display text-[1.05rem] font-extrabold">Searching for opponent...</div>
             <div class="text-[0.82rem] font-semibold tabular-nums text-muted">{{ elapsed }}</div>
           </div>
         </div>
       </div>
 
-      <PlayerBar :name="session.me?.username ?? 'You'" :rating="session.me?.rating" color="w" :captured="[]" :diff="0" :clock="session.queue ? session.queue.tc.base * 1000 : null" />
-    </div>
+      <template #bottom>
+      <PlayerBar :name="session.me?.username ?? 'You'" color="w" :captured="[]" :diff="0" :clock="session.queue ? session.queue.tc.base * 1000 : null" />
+      </template>
+    </BoardStage>
 
     <div class="px-4 pb-3 pt-2">
       <button class="btn btn-secondary h-12 w-full text-lg" @click="cancel">Cancel</button>

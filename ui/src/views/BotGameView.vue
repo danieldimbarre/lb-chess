@@ -5,6 +5,7 @@ import Board from '../components/Board.vue';
 import PlayerBar from '../components/PlayerBar.vue';
 import MoveList from '../components/MoveList.vue';
 import GameNav from '../components/GameNav.vue';
+import BoardStage from '../components/BoardStage.vue';
 import GameOverModal from '../components/GameOverModal.vue';
 import Modal from '../components/Modal.vue';
 import Sheet from '../components/Sheet.vue';
@@ -105,7 +106,7 @@ async function botTurn() {
   const started = Date.now();
   const uci = await requestBotMove(bot.id, startFen, uciMoves());
   // Humanise: weak bots answer quickly, strong ones take a moment.
-  const minDelay = 350 + Math.min(1200, bot.rating / 2) * Math.random();
+  const minDelay = 350 + bot.level * 140 * Math.random();
   const wait = Math.max(0, minDelay - (Date.now() - started));
   if (wait) await new Promise((r) => setTimeout(r, wait));
   if (disposed || over.value || model.turn.value !== them) return;
@@ -211,10 +212,11 @@ const outcomeFor = computed(() => {
     </TopBar>
     <MoveList :moves="model.state.moves" :ply="model.state.ply" :start-black="startFen.split(' ')[1] === 'b'" @goto="model.goto" />
 
-    <div class="flex min-h-0 flex-1 flex-col justify-center">
+    <BoardStage>
+      <template #top>
       <PlayerBar
         :name="bot.name"
-        :rating="bot.rating"
+        :tag="`Level ${bot.level}`"
         :color="them"
         :captured="material.captured[them]"
         :diff="them === 'w' ? material.diff : -material.diff"
@@ -224,6 +226,7 @@ const outcomeFor = computed(() => {
         :avatar-tint="bot.tint"
         :thinking="thinking"
       />
+      </template>
       <Board
         :fen="boardFen"
         :orientation="me"
@@ -239,16 +242,17 @@ const outcomeFor = computed(() => {
         @premove="(f, t, p) => premoves.add({ from: f, to: t, promotion: p })"
         @cancel-premoves="premoves.clear"
       />
+      <template #bottom>
       <PlayerBar
         :name="myName"
-        :rating="session.me?.rating"
         :color="me"
         :captured="material.captured[me]"
         :diff="me === 'w' ? material.diff : -material.diff"
         :clock="remaining(me)"
         :clock-active="running && model.turn.value === me"
       />
-    </div>
+      </template>
+    </BoardStage>
 
     <GameNav :ply="model.state.ply" :head="model.head.value" @goto="model.goto">
       <template v-if="!over">
@@ -288,7 +292,7 @@ const outcomeFor = computed(() => {
       :outcome="outcomeFor"
       :reason="over.reason"
       :me="{ name: myName, winner: outcomeFor === 'win' }"
-      :opponent="{ name: bot.name, rating: bot.rating, role: bot.role, tint: bot.tint, winner: outcomeFor === 'loss' }"
+      :opponent="{ name: bot.name, caption: `Level ${bot.level}`, role: bot.role, tint: bot.tint, winner: outcomeFor === 'loss' }"
       @close="showResult = false"
     >
       <button class="btn btn-primary h-12 w-full text-lg" @click="rematch">Rematch</button>

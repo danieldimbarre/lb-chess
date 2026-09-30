@@ -10,9 +10,9 @@ import Icon from '../components/Icon.vue';
 import BoardEditor from '../components/BoardEditor.vue';
 import GameNav from '../components/GameNav.vue';
 import EvalBar from '../components/EvalBar.vue';
+import BoardStage from '../components/BoardStage.vue';
+import San from '../components/San.vue';
 import { requestAnalysis, type EvalInfo } from '../engine/client';
-import { figurine } from '../chess/util';
-import { settings } from '../stores/settings';
 import { createModel } from '../chess/model';
 import { materialInfo, START_FEN } from '../chess/util';
 import { copyText, toast } from '../lib/toast';
@@ -133,18 +133,18 @@ onBeforeUnmount(() => clearTimeout(evalTimer));
 
 const bestLine = computed(() => {
   const e = evalInfo.value;
-  if (!e || !e.pv.length) return '';
+  if (!e || !e.pv.length) return [] as string[];
   const c = new Chess(model.viewFen.value);
   const sans: string[] = [];
   for (const uci of e.pv.slice(0, 8)) {
     try {
       const m = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] });
-      sans.push(settings.figurine ? figurine(m.san) : m.san);
+      sans.push(m.san);
     } catch {
       break;
     }
   }
-  return sans.join(' ');
+  return sans;
 });
 
 const evalText = computed(() => {
@@ -189,9 +189,11 @@ function reset() {
 
     <template v-else>
       <MoveList :moves="model.state.moves" :ply="model.state.ply" :start-black="model.state.initialFen.split(' ')[1] === 'b'" :start-number="Number(model.state.initialFen.split(' ')[5]) || 1" @goto="model.goto" />
-      <div class="flex min-h-0 flex-1 flex-col justify-center">
-        <PlayerBar :name="nameOf(top)" :color="top" :captured="material.captured[top]" :diff="top === 'w' ? material.diff : -material.diff" :avatar-role="'k'" :avatar-tint="top === 'w' ? '#d9d6d0' : '#1f1e1c'" />
-        <div class="flex gap-1" :class="engineOn ? 'pl-1' : ''">
+      <BoardStage :reserve-height="engineOn ? 164 : 128" :reserve-width="engineOn ? 18 : 0">
+        <template #top>
+          <PlayerBar :name="nameOf(top)" :color="top" :captured="material.captured[top]" :diff="top === 'w' ? material.diff : -material.diff" :avatar-role="'k'" :avatar-tint="top === 'w' ? '#d9d6d0' : '#1f1e1c'" />
+        </template>
+        <div class="flex gap-1">
           <EvalBar v-if="engineOn" :cp="evalInfo?.cp ?? 0" :mate="evalInfo?.mate ?? null" :orientation="orientation" />
           <div class="min-w-0 flex-1">
             <Board
@@ -208,16 +210,20 @@ function reset() {
             />
           </div>
         </div>
-        <PlayerBar :name="nameOf(bottom)" :color="bottom" :captured="material.captured[bottom]" :diff="bottom === 'w' ? material.diff : -material.diff" :avatar-role="'k'" :avatar-tint="bottom === 'w' ? '#d9d6d0' : '#1f1e1c'" />
-        <div v-if="engineOn" class="mx-3 flex h-8 items-center gap-2 overflow-hidden rounded-md bg-surface px-2 text-[0.8rem]">
-          <span class="shrink-0 rounded bg-surface-3 px-1.5 py-0.5 font-display font-extrabold tabular-nums">{{ evalText }}</span>
-          <span class="truncate font-semibold text-ink-2">{{ bestLine }}</span>
-          <span v-if="evalInfo?.depth" class="ml-auto shrink-0 text-[0.68rem] text-muted">d{{ evalInfo.depth }}</span>
-        </div>
-        <div class="h-6 pt-1 text-center text-[0.84rem] font-semibold" :class="status ? 'text-gold' : 'text-muted'">
-          {{ status ?? (model.viewTurn.value === 'w' ? 'White to move' : 'Black to move') }}
-        </div>
-      </div>
+        <template #bottom>
+          <PlayerBar :name="nameOf(bottom)" :color="bottom" :captured="material.captured[bottom]" :diff="bottom === 'w' ? material.diff : -material.diff" :avatar-role="'k'" :avatar-tint="bottom === 'w' ? '#d9d6d0' : '#1f1e1c'" />
+          <div v-if="engineOn" class="mx-3 flex h-8 items-center gap-2 overflow-hidden rounded-md bg-surface px-2 text-[0.8rem]">
+            <span class="shrink-0 rounded bg-surface-3 px-1.5 py-0.5 font-display font-extrabold tabular-nums">{{ evalText }}</span>
+            <span class="flex min-w-0 flex-1 gap-1.5 overflow-hidden font-semibold text-ink-2">
+              <San v-for="(san, i) in bestLine" :key="i" :san="san" />
+            </span>
+            <span v-if="evalInfo?.depth" class="shrink-0 text-[0.68rem] text-muted">d{{ evalInfo.depth }}</span>
+          </div>
+          <div class="h-6 truncate pt-1 text-center text-[0.84rem] font-semibold" :class="status ? 'text-gold' : 'text-muted'">
+            {{ status ?? (model.viewTurn.value === 'w' ? 'White to move' : 'Black to move') }}
+          </div>
+        </template>
+      </BoardStage>
       <GameNav :ply="model.state.ply" :head="model.head.value" @goto="model.goto">
         <button class="tap flex h-12 flex-1 flex-col items-center justify-center text-[0.68rem] font-semibold text-ink-2" :disabled="!model.head.value" @click="model.undo()">
           <Icon name="undo" :size="20" />

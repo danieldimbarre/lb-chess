@@ -31,7 +31,7 @@ const progress = computed(() => (challenge.value ? Math.max(0, (challenge.value.
         <Avatar :name="challenge.from.username" :size="42" />
         <div class="min-w-0 flex-1 leading-tight">
           <div class="truncate text-[0.95rem] font-bold">
-            {{ challenge.from.username }} <span class="font-semibold text-muted">({{ challenge.from.rating }})</span>
+            {{ challenge.from.username }}
           </div>
           <div class="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[0.78rem] font-semibold text-ink-2">
             <Icon :name="tcCategory(challenge.tc).icon" :size="14" :style="{ color: tcCategory(challenge.tc).color }" />

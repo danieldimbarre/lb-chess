@@ -4,6 +4,7 @@ import Board from '../components/Board.vue';
 import PlayerBar from '../components/PlayerBar.vue';
 import MoveList from '../components/MoveList.vue';
 import GameNav from '../components/GameNav.vue';
+import BoardStage from '../components/BoardStage.vue';
 import GameOverModal from '../components/GameOverModal.vue';
 import Modal from '../components/Modal.vue';
 import Sheet from '../components/Sheet.vue';
@@ -27,8 +28,8 @@ if (!initial) queueMicrotask(() => reset('home'));
 
 const snap: GameSnapshot = initial ?? {
   id: '',
-  white: { username: '', rating: 0 },
-  black: { username: '', rating: 0 },
+  white: { username: '' },
+  black: { username: '' },
   myColor: 'w',
   tc: { base: 0, inc: 0 },
   moves: [],
@@ -249,7 +250,7 @@ const rematchState = computed(() => {
       </button>
       <div class="flex flex-1 items-center gap-1.5 font-display font-extrabold">
         <Icon :name="cat.icon" :size="18" :style="{ color: cat.color }" />
-        {{ tcLabel(snap.tc) }} <span class="text-[0.8rem] font-bold text-muted">· Rated</span>
+        {{ tcLabel(snap.tc) }} <span class="text-[0.8rem] font-bold text-muted">· Online</span>
       </div>
       <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" aria-label="Game menu" @click="menu = true">
         <Icon name="dots" :size="26" :stroke="3.4" />
@@ -257,10 +258,10 @@ const rematchState = computed(() => {
     </header>
     <MoveList :moves="model.state.moves" :ply="model.state.ply" @goto="model.goto" />
 
-    <div class="flex min-h-0 flex-1 flex-col justify-center">
+    <BoardStage>
+      <template #top>
       <PlayerBar
         :name="oppInfo.username"
-        :rating="oppInfo.rating"
         :color="them"
         :captured="material.captured[them]"
         :diff="them === 'w' ? material.diff : -material.diff"
@@ -268,6 +269,7 @@ const rematchState = computed(() => {
         :clock-active="clockRunning(them)"
         :status="oppStatus"
       />
+      </template>
       <div class="relative">
         <Board
           :fen="boardFen"
@@ -292,9 +294,9 @@ const rematchState = computed(() => {
           </div>
         </Transition>
       </div>
+      <template #bottom>
       <PlayerBar
         :name="myInfo.username"
-        :rating="myInfo.rating"
         :color="me"
         :captured="material.captured[me]"
         :diff="me === 'w' ? material.diff : -material.diff"
@@ -302,7 +304,8 @@ const rematchState = computed(() => {
         :clock-active="clockRunning(me)"
         :status="myStatus"
       />
-    </div>
+      </template>
+    </BoardStage>
 
     <GameNav :ply="model.state.ply" :head="model.head.value" @goto="model.goto">
       <template v-if="playing">
@@ -361,8 +364,8 @@ const rematchState = computed(() => {
       :open="showResult"
       :outcome="outcome"
       :reason="game.reason ?? 'aborted'"
-      :me="{ name: myInfo.username, rating: myInfo.rating + (game.ratingDelta?.[me] ?? 0), delta: outcome === 'aborted' ? null : game.ratingDelta?.[me] ?? null, winner: outcome === 'win' }"
-      :opponent="{ name: oppInfo.username, rating: oppInfo.rating + (game.ratingDelta?.[them] ?? 0), delta: outcome === 'aborted' ? null : game.ratingDelta?.[them] ?? null, winner: outcome === 'loss' }"
+      :me="{ name: myInfo.username, winner: outcome === 'win' }"
+      :opponent="{ name: oppInfo.username, winner: outcome === 'loss' }"
       @close="showResult = false"
     >
       <button v-if="rematchState === 'received'" class="btn btn-primary pulse h-12 w-full text-lg" @click="rematch">Accept Rematch</button>

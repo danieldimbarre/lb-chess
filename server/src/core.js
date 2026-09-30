@@ -1,5 +1,4 @@
 import { Chess } from 'chess.js';
-import { ratingDeltas } from './elo.js';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const SQUARE = /^[a-h][1-8]$/;
@@ -58,7 +57,7 @@ export class ChessService {
 
   publicProfile(p) {
     if (!p) return null;
-    return { username: p.username, rating: p.rating, games: p.games, wins: p.wins, losses: p.losses, draws: p.draws, peak: p.peak, createdAt: p.createdAt };
+    return { username: p.username, games: p.games, wins: p.wins, losses: p.losses, draws: p.draws, createdAt: p.createdAt };
   }
 
   validTc(tc) {
@@ -74,7 +73,7 @@ export class ChessService {
   }
 
   playerRef(p) {
-    return { username: p.username, rating: p.rating };
+    return { username: p.username };
   }
 
   challengeView(c) {
@@ -111,7 +110,6 @@ export class ChessService {
       status: game.status,
       result: game.result,
       reason: game.reason,
-      ratingDelta: game.ratingDelta,
       rematch: game.rematch,
       disconnectDeadline: game.disconnect[other(this.colorOf(game, passport) ?? 'w')] ?? null,
     };
@@ -182,7 +180,7 @@ export class ChessService {
     const username = String(data.username ?? '').trim();
     if (username.length < this.cfg.usernameMin || username.length > this.cfg.usernameMax || !USERNAME.test(username)) return fail('username_invalid');
     try {
-      const row = await this.db.createPlayer(passport, username, this.cfg.startRating);
+      const row = await this.db.createPlayer(passport, username);
       this.profiles.set(passport, row);
       return { ok: true, me: this.publicProfile(row) };
     } catch (err) {
@@ -355,7 +353,6 @@ export class ChessService {
       status: 'playing',
       result: undefined,
       reason: undefined,
-      ratingDelta: undefined,
       rematch: null,
       disconnect: { w: null, b: null },
       startedAt: now,
@@ -529,7 +526,6 @@ export class ChessService {
 
     if (reason === 'aborted') {
       game.result = undefined;
-      game.ratingDelta = { w: 0, b: 0 };
     } else {
       game.result = result;
       await this.applyResult(game, result, reason);
@@ -539,7 +535,6 @@ export class ChessService {
       id: game.id,
       result: game.result,
       reason,
-      ratingDelta: game.ratingDelta,
       clocks: { ...game.clocks },
       me: this.publicProfile(this.profiles.get(p)),
     }));
@@ -550,20 +545,15 @@ export class ChessService {
   async applyResult(game, result, reason) {
     const wp = await this.profile(game.white);
     const bp = await this.profile(game.black);
-    const delta = ratingDeltas(wp, bp, result);
-    game.ratingDelta = delta;
-
-    const update = (p, d, score) => {
-      p.rating = Math.max(100, p.rating + d);
-      p.peak = Math.max(p.peak ?? p.rating, p.rating);
+    const update = (p, score) => {
       p.games += 1;
       if (score === 1) p.wins += 1;
       else if (score === 0) p.losses += 1;
       else p.draws += 1;
     };
     const sw = result === '1-0' ? 1 : result === '0-1' ? 0 : 0.5;
-    update(wp, delta.w, sw);
-    update(bp, delta.b, 1 - sw);
+    update(wp, sw);
+    update(bp, 1 - sw);
 
     // The live chess.js instance already holds the full history.
     const pgnGame = game.chess;
@@ -573,8 +563,6 @@ export class ChessService {
     pgnGame.setHeader('White', game.players.w.username);
     pgnGame.setHeader('Black', game.players.b.username);
     pgnGame.setHeader('Result', result);
-    pgnGame.setHeader('WhiteElo', String(game.players.w.rating));
-    pgnGame.setHeader('BlackElo', String(game.players.b.rating));
     pgnGame.setHeader('TimeControl', `${game.tc.base}+${game.tc.inc}`);
     pgnGame.setHeader('Termination', reason);
 
@@ -586,10 +574,6 @@ export class ChessService {
         black: game.black,
         whiteName: game.players.w.username,
         blackName: game.players.b.username,
-        whiteRating: game.players.w.rating,
-        blackRating: game.players.b.rating,
-        whiteDelta: delta.w,
-        blackDelta: delta.b,
         result,
         reason,
         tc: `${game.tc.base}+${game.tc.inc}`,
@@ -611,7 +595,7 @@ export class ChessService {
   // Social ---------------------------------------------------------------------------------
 
   async leaderboard({ passport, data }) {
-    const sort = ['games', 'winrate', 'rating'].includes(data.sort) ? data.sort : 'games';
+    const sort = ['games', 'winrate', 'wins'].includes(data.sort) ? data.sort : 'games';
     const min = this.cfg.leaderboardMinGames;
     const rows = await this.db.leaderboard(sort, min, this.cfg.leaderboardSize);
     const me = await this.profile(passport);
@@ -627,7 +611,6 @@ export class ChessService {
   row(p) {
     return {
       username: p.username,
-      rating: p.rating,
       games: p.games,
       wins: p.wins,
       losses: p.losses,
@@ -648,15 +631,11 @@ export class ChessService {
       isMe: target.passport === passport,
       online: this.isOnline(target.passport),
       playing: this.playerGame.has(target.passport),
-      rank: await this.db.rankOf(target.passport, 'rating', this.cfg.leaderboardMinGames),
+      rank: await this.db.rankOf(target.passport, 'games', this.cfg.leaderboardMinGames),
       games: games.map((g) => ({
         id: g.id,
         white: g.whiteName,
         black: g.blackName,
-        whiteRating: g.whiteRating,
-        blackRating: g.blackRating,
-        whiteDelta: g.whiteDelta,
-        blackDelta: g.blackDelta,
         result: g.result,
         reason: g.reason,
         tc: g.tc,
@@ -675,7 +654,7 @@ export class ChessService {
       ok: true,
       players: rows
         .filter((p) => p.passport !== passport)
-        .map((p) => ({ username: p.username, rating: p.rating, online: this.isOnline(p.passport), playing: this.playerGame.has(p.passport) })),
+        .map((p) => ({ username: p.username, online: this.isOnline(p.passport), playing: this.playerGame.has(p.passport) })),
     };
   }
 

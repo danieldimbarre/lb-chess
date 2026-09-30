@@ -18,8 +18,6 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS chess_players (
     passport INT NOT NULL PRIMARY KEY,
     username VARCHAR(16) NOT NULL,
-    rating INT NOT NULL DEFAULT 1200,
-    peak INT NOT NULL DEFAULT 1200,
     games INT NOT NULL DEFAULT 0,
     wins INT NOT NULL DEFAULT 0,
     losses INT NOT NULL DEFAULT 0,
@@ -27,7 +25,7 @@ const SCHEMA = [
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_chess_username (username),
     KEY idx_chess_games (games),
-    KEY idx_chess_rating (rating)
+    KEY idx_chess_wins (wins)
   ) DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS chess_games (
     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -35,10 +33,6 @@ const SCHEMA = [
     black INT NOT NULL,
     white_name VARCHAR(16) NOT NULL,
     black_name VARCHAR(16) NOT NULL,
-    white_rating INT NOT NULL,
-    black_rating INT NOT NULL,
-    white_delta INT NOT NULL DEFAULT 0,
-    black_delta INT NOT NULL DEFAULT 0,
     result VARCHAR(7) NOT NULL,
     reason VARCHAR(24) NOT NULL,
     time_control VARCHAR(12) NOT NULL,
@@ -50,7 +44,16 @@ const SCHEMA = [
   ) DEFAULT CHARSET=utf8mb4`,
 ];
 
-const PLAYER_COLS = 'passport, username, rating, peak, games, wins, losses, draws, UNIX_TIMESTAMP(created_at) * 1000 AS createdAt';
+const LEGACY_COLUMNS = [
+  ['chess_players', 'rating'],
+  ['chess_players', 'peak'],
+  ['chess_games', 'white_rating'],
+  ['chess_games', 'black_rating'],
+  ['chess_games', 'white_delta'],
+  ['chess_games', 'black_delta'],
+];
+
+const PLAYER_COLS = 'passport, username, games, wins, losses, draws, UNIX_TIMESTAMP(created_at) * 1000 AS createdAt';
 
 const mapGame = (r) => ({
   id: r.id,
@@ -58,10 +61,6 @@ const mapGame = (r) => ({
   black: r.black,
   whiteName: r.white_name,
   blackName: r.black_name,
-  whiteRating: r.white_rating,
-  blackRating: r.black_rating,
-  whiteDelta: r.white_delta,
-  blackDelta: r.black_delta,
   result: r.result,
   reason: r.reason,
   tc: r.time_control,
@@ -71,32 +70,35 @@ const mapGame = (r) => ({
 });
 
 const ORDER = {
-  games: 'games DESC, wins DESC, rating DESC',
+  games: 'games DESC, wins DESC',
   winrate: '(wins / games) DESC, games DESC',
-  rating: 'rating DESC, games DESC',
+  wins: 'wins DESC, games DESC',
 };
 const WHERE = {
   games: '1 = 1',
   winrate: 'games >= ?',
-  rating: 'games > 0',
+  wins: 'games > 0',
 };
 
 export function createMysqlDb() {
   return {
     async init() {
       for (const sql of SCHEMA) await query(sql);
+      // Older versions had an Elo system; drop its columns so inserts don't need them.
+      for (const [table, column] of LEGACY_COLUMNS) {
+        const found = await single('SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?', [table, column]);
+        if (Number(found?.n)) await query(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+      }
     },
     getPlayer: (passport) => single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE passport = ?`, [passport]),
     getPlayerByName: (username) => single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE username = ?`, [username]),
-    async createPlayer(passport, username, rating) {
-      const res = await query('INSERT IGNORE INTO chess_players (passport, username, rating, peak) VALUES (?, ?, ?, ?)', [passport, username, rating, rating]);
+    async createPlayer(passport, username) {
+      const res = await query('INSERT IGNORE INTO chess_players (passport, username) VALUES (?, ?)', [passport, username]);
       if (!res || !res.affectedRows) throw Object.assign(new Error('dup'), { code: 'ER_DUP_ENTRY' });
       return single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE passport = ?`, [passport]);
     },
     async updatePlayer(passport, f) {
-      await query('UPDATE chess_players SET rating = ?, peak = ?, games = ?, wins = ?, losses = ?, draws = ? WHERE passport = ?', [
-        f.rating,
-        f.peak,
+      await query('UPDATE chess_players SET games = ?, wins = ?, losses = ?, draws = ? WHERE passport = ?', [
         f.games,
         f.wins,
         f.losses,
@@ -106,9 +108,9 @@ export function createMysqlDb() {
     },
     async insertGame(g) {
       const res = await query(
-        `INSERT INTO chess_games (white, black, white_name, black_name, white_rating, black_rating, white_delta, black_delta, result, reason, time_control, moves, pgn)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [g.white, g.black, g.whiteName, g.blackName, g.whiteRating, g.blackRating, g.whiteDelta, g.blackDelta, g.result, g.reason, g.tc, g.moves, g.pgn],
+        `INSERT INTO chess_games (white, black, white_name, black_name, result, reason, time_control, moves, pgn)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [g.white, g.black, g.whiteName, g.blackName, g.result, g.reason, g.tc, g.moves, g.pgn],
       );
       return res?.insertId ?? 0;
     },
@@ -134,7 +136,7 @@ export function createMysqlDb() {
         return Number(r?.n ?? 0) + 1;
       }
       if (!me.games) return null;
-      const r = await single('SELECT COUNT(*) AS n FROM chess_players WHERE games > 0 AND rating > ?', [me.rating]);
+      const r = await single('SELECT COUNT(*) AS n FROM chess_players WHERE games > 0 AND (wins > ? OR (wins = ? AND games > ?))', [me.wins, me.wins, me.games]);
       return Number(r?.n ?? 0) + 1;
     },
     async recentGames(passport, limit) {

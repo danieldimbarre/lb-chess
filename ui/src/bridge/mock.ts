@@ -13,11 +13,11 @@ import { botMove, botById } from '../engine/bots';
 const ME = 1;
 
 const FAKES = [
-  { passport: 101, username: 'Hikaru_LS', rating: 1712, games: 184, wins: 112, losses: 58, draws: 14, bot: 'amara' },
-  { passport: 102, username: 'VinewoodQueen', rating: 1488, games: 96, wins: 51, losses: 38, draws: 7, bot: 'viktor' },
-  { passport: 103, username: 'PaletoPawn', rating: 1134, games: 41, wins: 17, losses: 21, draws: 3, bot: 'sofia' },
-  { passport: 104, username: 'GroveStreetGM', rating: 1966, games: 312, wins: 201, losses: 88, draws: 23, bot: 'kaspar', declines: true },
-  { passport: 105, username: 'SandyShoresNoob', rating: 802, games: 12, wins: 3, losses: 9, draws: 0, bot: 'maya' },
+  { passport: 101, username: 'Hikaru_LS', games: 184, wins: 112, losses: 58, draws: 14, bot: 'amara' },
+  { passport: 102, username: 'VinewoodQueen', games: 96, wins: 51, losses: 38, draws: 7, bot: 'viktor' },
+  { passport: 103, username: 'PaletoPawn', games: 41, wins: 17, losses: 21, draws: 3, bot: 'sofia' },
+  { passport: 104, username: 'GroveStreetGM', games: 312, wins: 201, losses: 88, draws: 23, bot: 'kaspar', declines: true },
+  { passport: 105, username: 'SandyShoresNoob', games: 12, wins: 3, losses: 9, draws: 0, bot: 'maya' },
 ];
 
 export function createMock(push: (action: string, data: unknown) => void) {
@@ -43,8 +43,8 @@ export function createMock(push: (action: string, data: unknown) => void) {
 
   const seeded = (async () => {
     for (const f of FAKES) {
-      await db.createPlayer(f.passport, f.username, f.rating);
-      await db.updatePlayer(f.passport, { rating: f.rating, peak: f.rating + 40, games: f.games, wins: f.wins, losses: f.losses, draws: f.draws });
+      await db.createPlayer(f.passport, f.username);
+      await db.updatePlayer(f.passport, { games: f.games, wins: f.wins, losses: f.losses, draws: f.draws });
     }
     if (params.get('user')) await as(ME, 'register', { username: params.get('user') });
   })();

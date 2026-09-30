@@ -14,7 +14,7 @@ const cat = computed(() => tcCategory(prefs.tc));
 
 const rows = [
   { route: 'challenge', icon: 'swords', title: 'Play a Friend', sub: 'Challenge a player by username', tint: '#5d9fd8' },
-  { route: 'bots', icon: 'bot', title: 'Play Bots', sub: '8 opponents from 250 to 2400', tint: '#c3632e' },
+  { route: 'bots', icon: 'bot', title: 'Play Bots', sub: '8 opponents, from beginner to master', tint: '#c3632e' },
   { route: 'analysis', icon: 'board', title: 'Analysis Board', sub: 'Study positions with the engine', tint: '#8c5bb5' },
 ] as const;
 </script>
@@ -26,7 +26,7 @@ const rows = [
         <Avatar :name="me?.username ?? '?'" :size="40" />
         <div class="min-w-0 leading-tight">
           <div class="truncate font-display text-[1.1rem] font-extrabold">{{ me?.username }}</div>
-          <div class="text-[0.8rem] font-semibold text-muted">Rating {{ me?.rating ?? '—' }}</div>
+          <div class="text-[0.8rem] font-semibold text-muted">{{ me?.games ?? 0 }} {{ me?.games === 1 ? 'game' : 'games' }} played</div>
         </div>
       </button>
       <div class="flex items-center gap-1 rounded-full bg-surface px-3 py-1.5 text-[0.78rem] font-bold">
@@ -88,8 +88,8 @@ const rows = [
 
         <section class="card grid grid-cols-3 divide-x divide-line py-3 text-center">
           <div>
-            <div class="font-display text-xl font-extrabold">{{ me?.rating ?? '—' }}</div>
-            <div class="text-[0.72rem] font-bold uppercase tracking-wide text-muted">Rating</div>
+            <div class="font-display text-xl font-extrabold">{{ me?.wins ?? 0 }}</div>
+            <div class="text-[0.72rem] font-bold uppercase tracking-wide text-muted">Wins</div>
           </div>
           <div>
             <div class="font-display text-xl font-extrabold">{{ me?.games ?? 0 }}</div>

@@ -47,7 +47,7 @@ function play() {
       <div class="px-4 pb-3">
         <div class="flex items-baseline gap-2">
           <span class="font-display text-2xl font-extrabold">{{ bot.name }}</span>
-          <span class="text-lg font-semibold text-muted">{{ bot.rating }}</span>
+          <span class="text-lg font-semibold text-muted">Level {{ bot.level }}</span>
         </div>
         <div class="text-[0.88rem] text-ink-2">{{ bot.tagline }}</div>
       </div>
@@ -60,11 +60,11 @@ function play() {
             :key="b.id"
             class="tap relative rounded-lg p-[3px]"
             :class="prefs.botId === b.id ? 'bg-green' : 'bg-transparent'"
-            :aria-label="`${b.name} ${b.rating}`"
+            :aria-label="`${b.name}, level ${b.level}`"
             @click="prefs.botId = b.id"
           >
             <Avatar :name="b.name" :size="56" :role="b.role" :tint="b.tint" />
-            <span class="absolute inset-x-[3px] bottom-[3px] rounded-b-md bg-black/55 text-center text-[0.66rem] font-bold text-white">{{ b.rating }}</span>
+            <span class="absolute inset-x-[3px] bottom-[3px] rounded-b-md bg-black/55 text-center text-[0.66rem] font-bold text-white">Lv {{ b.level }}</span>
           </button>
         </div>
       </div>

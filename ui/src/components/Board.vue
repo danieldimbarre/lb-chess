@@ -4,6 +4,7 @@ import type { Color } from '../types';
 import { parsePlacement, premoveDests, fileOf, rankOf, squareAt, isLight, FILES, type BoardMap, type Role } from '../chess/util';
 import { settings, boardThemes, animationMs } from '../stores/settings';
 import { pieceUrl } from '../chess/pieces';
+import Icon from './Icon.vue';
 
 const props = withDefaults(
   defineProps<{
@@ -495,9 +496,7 @@ const promotionColumn = computed(() => {
           <button
             class="flex h-7 items-center justify-center bg-[#f1f1f1] text-lg font-bold text-[#8b8987]"
             @click="choosePromotion(null)"
-          >
-            ✕
-          </button>
+          ><Icon name="x" :size="16" :stroke="3" /></button>
         </div>
       </div>
     </Transition>

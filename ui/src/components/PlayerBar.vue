@@ -8,7 +8,8 @@ import type { Color } from '../types';
 
 const props = defineProps<{
   name: string;
-  rating?: number | null;
+  /** Muted text after the name (bot level, etc.). */
+  tag?: string | null;
   /** Colour this player plays; captured icons show the opponent's colour. */
   color: Color;
   captured: Role[];
@@ -34,7 +35,7 @@ const opp = computed<Color>(() => (props.color === 'w' ? 'b' : 'w'));
     <div class="min-w-0 flex-1 leading-tight">
       <div class="flex items-center gap-1.5 truncate text-[0.92rem] font-semibold">
         <span class="truncate">{{ name }}</span>
-        <span v-if="rating" class="font-normal text-muted">({{ rating }})</span>
+        <span v-if="tag" class="shrink-0 font-normal text-muted">{{ tag }}</span>
         <span v-if="thinking" class="thinking ml-0.5 inline-flex gap-0.5"><i /><i /><i /></span>
       </div>
       <div class="flex h-[18px] items-center">

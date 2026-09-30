@@ -55,14 +55,13 @@ export function installPushHandlers() {
     g.drawOffer = null;
   });
 
-  onPush('game:end', (d: { id: string; result?: GameSnapshot['result']; reason: GameSnapshot['reason']; ratingDelta?: { w: number; b: number }; clocks: { w: number; b: number }; me: Profile | null }) => {
+  onPush('game:end', (d: { id: string; result?: GameSnapshot['result']; reason: GameSnapshot['reason']; clocks: { w: number; b: number }; me: Profile | null }) => {
     if (d.me) session.me = d.me;
     const g = session.game;
     if (!g || g.id !== d.id) return;
     g.status = 'ended';
     g.result = d.result;
     g.reason = d.reason;
-    g.ratingDelta = d.ratingDelta;
     g.clocks = d.clocks;
     g.firstMoveDeadline = null;
     g.drawOffer = null;

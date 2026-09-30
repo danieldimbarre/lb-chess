@@ -18,10 +18,6 @@ interface GameRow {
   id: number;
   white: string;
   black: string;
-  whiteRating: number;
-  blackRating: number;
-  whiteDelta: number;
-  blackDelta: number;
   result: '1-0' | '0-1' | '1/2-1/2';
   reason: string;
   tc: string;
@@ -94,19 +90,19 @@ function open(g: GameRow) {
             <div class="min-w-0">
               <div class="truncate font-display text-[1.45rem] font-extrabold leading-tight">{{ p.username }}</div>
               <div class="text-[0.84rem] font-semibold text-muted">
-                {{ data!.playing ? 'Playing now' : data!.online ? 'Online' : 'Offline' }}<template v-if="data!.rank"> · #{{ data!.rank }} by rating</template>
+                {{ data!.playing ? 'Playing now' : data!.online ? 'Online' : 'Offline' }}<template v-if="data!.rank"> · #{{ data!.rank }} by games played</template>
               </div>
             </div>
           </section>
 
           <section class="grid grid-cols-3 gap-2">
             <div class="card px-2 py-3 text-center">
-              <div class="font-display text-[1.35rem] font-extrabold">{{ p.rating }}</div>
-              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">Rating</div>
+              <div class="font-display text-[1.35rem] font-extrabold">{{ p.games }}</div>
+              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">Games</div>
             </div>
             <div class="card px-2 py-3 text-center">
-              <div class="font-display text-[1.35rem] font-extrabold">{{ p.peak ?? p.rating }}</div>
-              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">Peak</div>
+              <div class="font-display text-[1.35rem] font-extrabold">{{ p.wins }}</div>
+              <div class="text-[0.68rem] font-bold uppercase tracking-wide text-muted">Wins</div>
             </div>
             <div class="card px-2 py-3 text-center">
               <div class="font-display text-[1.35rem] font-extrabold">{{ winRate }}%</div>
@@ -149,23 +145,17 @@ function open(g: GameRow) {
                   <span class="flex items-center gap-1.5 truncate text-[0.88rem] font-semibold">
                     <span class="size-2.5 shrink-0 rounded-sm border border-black/30" :class="side(g) === 'w' ? 'bg-white' : 'bg-[#312e2b]'" />
                     vs {{ side(g) === 'w' ? g.black : g.white }}
-                    <span class="font-normal text-muted">({{ side(g) === 'w' ? g.blackRating : g.whiteRating }})</span>
                   </span>
                   <span class="block text-[0.74rem] text-muted">{{ tcLabel(parseTc(g.tc)) }} · {{ Math.ceil(g.moves / 2) }} moves · {{ g.reason }} · {{ ago(g.createdAt) }}</span>
                 </span>
-                <span class="flex flex-col items-end">
-                  <span
-                    class="flex size-6 items-center justify-center rounded-md text-[0.72rem] font-extrabold text-white"
-                    :class="{ 'bg-green': outcome(g) === 'win', 'bg-red': outcome(g) === 'loss', 'bg-[#8b8987]': outcome(g) === 'draw' }"
-                  >
-                    {{ outcome(g) === 'win' ? '+' : outcome(g) === 'loss' ? '−' : '=' }}
-                  </span>
-                  <span class="mt-0.5 text-[0.7rem] font-bold" :class="(side(g) === 'w' ? g.whiteDelta : g.blackDelta) >= 0 ? 'text-green' : 'text-red'">
-                    {{ (side(g) === 'w' ? g.whiteDelta : g.blackDelta) >= 0 ? '+' : '' }}{{ side(g) === 'w' ? g.whiteDelta : g.blackDelta }}
-                  </span>
+                <span
+                  class="shrink-0 rounded-md px-2 py-1 text-[0.7rem] font-extrabold uppercase text-white"
+                  :class="{ 'bg-green': outcome(g) === 'win', 'bg-red': outcome(g) === 'loss', 'bg-[#8b8987]': outcome(g) === 'draw' }"
+                >
+                  {{ outcome(g) === 'win' ? 'Won' : outcome(g) === 'loss' ? 'Lost' : 'Draw' }}
                 </span>
               </button>
-              <div v-if="!data!.games.length" class="px-4 py-8 text-center text-[0.88rem] text-muted">No rated games yet.</div>
+              <div v-if="!data!.games.length" class="px-4 py-8 text-center text-[0.88rem] text-muted">No games yet.</div>
             </div>
           </section>
         </div>

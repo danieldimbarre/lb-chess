@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ChessService } from '../src/core.js';
 import { createMemoryDb } from '../src/memorydb.js';
-import { ratingDeltas } from '../src/elo.js';
 
 const config = JSON.parse(readFileSync(new URL('../../config.json', import.meta.url)));
 
@@ -68,7 +67,8 @@ test('register validates and rejects duplicates case-insensitively', async () =>
   assert.equal((await call('register', 2, { username: 'magnus_99' })).error, 'username_taken');
   const boot = await call('bootstrap', 1);
   assert.equal(boot.me.username, 'Magnus_99');
-  assert.equal(boot.me.rating, config.startRating);
+  assert.equal(boot.me.games, 0);
+  assert.equal(boot.me.rating, undefined);
 });
 
 test('queue pairs two players with the same time control only', async () => {
@@ -96,13 +96,13 @@ test('rejects invalid time controls and moves out of turn / illegal / stale', as
   assert.equal((await call('game:move', 3, { id: g.id, from: 'e2', to: 'e4', ply: 0 })).error, 'not_found');
 });
 
-test('fool’s mate ends the game, updates ratings and stores the PGN', async () => {
+test('fool’s mate ends the game, updates stats and stores the PGN', async () => {
   const g = await startedGame();
   await play(g, ['f2f3', 'e7e5', 'g2g4', 'd8h4']);
   const end = last(g.white, 'game:end');
   assert.equal(end.result, '0-1');
   assert.equal(end.reason, 'checkmate');
-  assert.ok(end.ratingDelta.b > 0 && end.ratingDelta.w < 0);
+  assert.equal(end.ratingDelta, undefined);
   const lb = await call('leaderboard', 1, { sort: 'games' });
   assert.equal(lb.rows[0].games, 1);
   const prof = await call('profile', g.black);
@@ -155,7 +155,7 @@ test('timeout: win with mating material, draw against a lone king', async () => 
   assert.equal(last(g2.white, 'game:end').result, '1/2-1/2');
 });
 
-test('first move deadline aborts without rating change', async () => {
+test('first move deadline aborts without counting a game', async () => {
   const g = await startedGame();
   clock += config.firstMoveSeconds * 1000 + 1;
   await svc.tick();
@@ -272,12 +272,14 @@ test('leaderboard win rate needs minimum games', async () => {
   assert.equal(byGames.me.rank <= 2, true);
 });
 
-test('elo is zero-sum for equal K and favours the underdog', () => {
-  const d = ratingDeltas({ rating: 1200, games: 0 }, { rating: 1200, games: 0 }, '1-0');
-  assert.equal(d.w, 20);
-  assert.equal(d.b, -20);
-  const up = ratingDeltas({ rating: 1000, games: 100 }, { rating: 1400, games: 100 }, '1-0');
-  assert.ok(up.w > 15);
+test('leaderboard sorts by most wins', async () => {
+  const g = await startedGame();
+  await play(g, ['f2f3', 'e7e5', 'g2g4', 'd8h4']);
+  const lb = await call('leaderboard', 1, { sort: 'wins' });
+  assert.equal(lb.sort, 'wins');
+  assert.equal(lb.rows[0].wins, 1);
+  assert.equal(lb.rows.length, 2); // only players with games
+  assert.equal(lb.rows[0].rating, undefined);
 });
 
 test('search excludes self and returns presence', async () => {

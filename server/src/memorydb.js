@@ -7,11 +7,11 @@ export function createMemoryDb() {
 
   const winRate = (p) => (p.games ? p.wins / p.games : 0);
   const sorters = {
-    games: (a, b) => b.games - a.games || b.wins - a.wins || b.rating - a.rating,
+    games: (a, b) => b.games - a.games || b.wins - a.wins,
     winrate: (a, b) => winRate(b) - winRate(a) || b.games - a.games,
-    rating: (a, b) => b.rating - a.rating || b.games - a.games,
+    wins: (a, b) => b.wins - a.wins || b.games - a.games,
   };
-  const eligible = (sort, minGames) => (p) => (sort === 'winrate' ? p.games >= minGames : sort === 'rating' ? p.games > 0 : true);
+  const eligible = (sort, minGames) => (p) => (sort === 'winrate' ? p.games >= minGames : sort === 'wins' ? p.games > 0 : true);
 
   return {
     async init() {},
@@ -23,9 +23,9 @@ export function createMemoryDb() {
       for (const p of players.values()) if (lower(p.username) === lower(username)) return { ...p };
       return null;
     },
-    async createPlayer(passport, username, rating) {
+    async createPlayer(passport, username) {
       for (const p of players.values()) if (lower(p.username) === lower(username)) throw Object.assign(new Error('dup'), { code: 'ER_DUP_ENTRY' });
-      const row = { passport, username, rating, peak: rating, games: 0, wins: 0, losses: 0, draws: 0, createdAt: Date.now() };
+      const row = { passport, username, games: 0, wins: 0, losses: 0, draws: 0, createdAt: Date.now() };
       players.set(passport, row);
       return { ...row };
     },
