@@ -136,23 +136,38 @@ export function applyLoose(board: BoardMap, from: string, to: string, promotion?
 }
 
 export const PIECE_VALUE: Record<Role, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-const START_COUNT: Record<Role, number> = { p: 8, n: 2, b: 2, r: 2, q: 1, k: 1 };
+type Counts = Record<Color, Record<Role, number>>;
 
-/** Pieces each side has captured (as roles of the opponent's colour) and the material balance. */
-export function materialInfo(fen: string) {
-  const board = parsePlacement(fen);
-  const count = { w: { p: 0, n: 0, b: 0, r: 0, q: 0, k: 0 }, b: { p: 0, n: 0, b: 0, r: 0, q: 0, k: 0 } };
-  for (const p of board.values()) count[p.color][p.role]++;
+function countPieces(fen: string): Counts {
+  const count: Counts = { w: { p: 0, n: 0, b: 0, r: 0, q: 0, k: 0 }, b: { p: 0, n: 0, b: 0, r: 0, q: 0, k: 0 } };
+  for (const p of parsePlacement(fen).values()) count[p.color][p.role]++;
+  return count;
+}
 
+/**
+ * Pieces each side has captured (as roles of the opponent's colour) relative to the
+ * game's starting position, plus the material balance (positive = White ahead).
+ */
+export function materialInfo(fen: string, startFen: string = START_FEN) {
+  const start = countPieces(startFen);
+  const now = countPieces(fen);
   const captured: Record<Color, Role[]> = { w: [], b: [] };
   let score = 0;
+  // A pawn that promoted is not a captured pawn: offset missing pawns by promoted extras.
+  const promoted = (c: Color) => (['n', 'b', 'r', 'q'] as Role[]).reduce((n, r) => n + Math.max(0, now[c][r] - start[c][r]), 0);
+  const promotedW = promoted('w');
+  const promotedB = promoted('b');
   for (const role of ['p', 'n', 'b', 'r', 'q'] as Role[]) {
     // Promotions can push a count above the start value; clamp so nothing goes negative.
-    const missingB = Math.max(0, START_COUNT[role] - count.b[role]);
-    const missingW = Math.max(0, START_COUNT[role] - count.w[role]);
+    let missingB = Math.max(0, start.b[role] - now.b[role]);
+    let missingW = Math.max(0, start.w[role] - now.w[role]);
+    if (role === 'p') {
+      missingB = Math.max(0, missingB - promotedB);
+      missingW = Math.max(0, missingW - promotedW);
+    }
     for (let i = 0; i < missingB; i++) captured.w.push(role);
     for (let i = 0; i < missingW; i++) captured.b.push(role);
-    score += (count.w[role] - count.b[role]) * PIECE_VALUE[role];
+    score += (now.w[role] - now.b[role]) * PIECE_VALUE[role];
   }
   return { captured, diff: score };
 }

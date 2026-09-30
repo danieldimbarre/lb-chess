@@ -191,7 +191,7 @@ watch(
 // View ------------------------------------------------------------------------------
 
 const myName = computed(() => session.me?.username ?? 'You');
-const material = computed(() => materialInfo(model.atHead.value ? premoves.displayFen.value : model.viewFen.value));
+const material = computed(() => materialInfo(model.atHead.value ? premoves.displayFen.value : model.viewFen.value, startFen));
 const boardFen = computed(() => (model.atHead.value ? premoves.displayFen.value : model.viewFen.value));
 const outcomeFor = computed(() => {
   const o = over.value;

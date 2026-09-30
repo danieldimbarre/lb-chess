@@ -30,7 +30,7 @@ const menu = ref(false);
 const pgnInput = ref('');
 const board = ref<InstanceType<typeof Board>>();
 
-const material = computed(() => materialInfo(model.viewFen.value));
+const material = computed(() => materialInfo(model.viewFen.value, model.state.initialFen));
 
 // Moving from an earlier ply starts a new line, so the board needs that ply's legal moves.
 const viewDests = computed(() => {

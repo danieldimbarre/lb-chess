@@ -22,9 +22,24 @@ import { showError } from '../lib/toast';
 import type { Color, GameSnapshot } from '../types';
 
 const initial = session.game;
-if (!initial) reset('home');
+// Only reachable with a game (boot, resume, game:start); fall back to a harmless empty shell.
+if (!initial) queueMicrotask(() => reset('home'));
 
-const snap = initial as GameSnapshot;
+const snap: GameSnapshot = initial ?? {
+  id: '',
+  white: { username: '', rating: 0 },
+  black: { username: '', rating: 0 },
+  myColor: 'w',
+  tc: { base: 0, inc: 0 },
+  moves: [],
+  initialFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+  clocks: { w: 0, b: 0 },
+  turnStartedAt: 0,
+  serverTime: 0,
+  firstMoveDeadline: null,
+  drawOffer: null,
+  status: 'ended',
+};
 const gid = snap.id;
 const me: Color = snap.myColor;
 const them: Color = me === 'w' ? 'b' : 'w';
@@ -201,7 +216,7 @@ function review() {
 const oppInfo = computed(() => (me === 'w' ? game.value?.black ?? snap.black : game.value?.white ?? snap.white));
 const myInfo = computed(() => (me === 'w' ? game.value?.white ?? snap.white : game.value?.black ?? snap.black));
 const boardFen = computed(() => (model.atHead.value ? premoves.displayFen.value : model.viewFen.value));
-const material = computed(() => materialInfo(boardFen.value));
+const material = computed(() => materialInfo(boardFen.value, snap.initialFen));
 const cat = tcCategory(snap.tc);
 
 const outcome = computed(() => {

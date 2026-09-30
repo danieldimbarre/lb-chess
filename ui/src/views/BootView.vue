@@ -3,10 +3,12 @@ import { onMounted, ref } from 'vue';
 import { reset } from '../stores/router';
 import { session } from '../stores/session';
 import { bootstrap, installPushHandlers } from '../stores/online';
-import { componentsReady } from '../bridge/nui';
+import { componentsReady, request } from '../bridge/nui';
+import { errorText } from '../lib/toast';
 import { asset } from '../lib/asset';
 
 const failed = ref(false);
+const reason = ref('Could not reach the server.');
 
 async function start() {
   failed.value = false;
@@ -14,6 +16,10 @@ async function start() {
   installPushHandlers();
   const started = Date.now();
   const ok = await bootstrap();
+  if (!ok) {
+    const probe = await request('ping');
+    reason.value = probe?.ok ? 'Could not load your profile.' : (errorText[probe?.error] ?? 'Could not reach the server.');
+  }
   // Keep the splash up briefly so it doesn't flash.
   await new Promise((r) => setTimeout(r, Math.max(0, 450 - (Date.now() - started))));
   if (!ok) {
@@ -35,7 +41,7 @@ onMounted(start);
     <div class="font-display text-2xl font-extrabold tracking-tight">Chess</div>
     <div v-if="!failed" class="mt-2 size-6 rounded-full border-[3px] border-surface-3 border-t-green [animation:spin_700ms_linear_infinite]" />
     <template v-else>
-      <div class="text-sm text-muted">Could not reach the server.</div>
+      <div class="px-8 text-center text-sm text-muted">{{ reason }}</div>
       <button class="btn btn-primary h-11 px-8" @click="start">Retry</button>
     </template>
   </div>
