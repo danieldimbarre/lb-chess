@@ -1,4 +1,4 @@
-import { reactive, watch } from 'vue';
+import { reactive, ref, watch } from 'vue';
 import type { TimeControl } from '../types';
 
 export interface TcCategory {
@@ -85,3 +85,6 @@ watch(
   },
   { deep: true },
 );
+
+/** Time control picked on the challenge screen (separate from the quick-pairing one). */
+export const challengeTc = ref<TimeControl>({ ...prefs.tc });

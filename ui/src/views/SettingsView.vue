@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import TopBar from '../components/TopBar.vue';
+import TabBar from '../components/TabBar.vue';
+
+defineProps<{ tab?: boolean }>();
 import Toggle from '../components/Toggle.vue';
 import Board from '../components/Board.vue';
 import { settings, boardThemes, type BoardThemeId, type Settings } from '../stores/settings';
@@ -30,8 +33,8 @@ function setFlag(key: keyof Settings, value: boolean) {
 
 <template>
   <div class="flex h-full flex-col bg-bg pt-(--safe-top)">
-    <TopBar title="Settings" />
-    <div class="min-h-0 flex-1 overflow-y-auto pb-(--safe-bottom)">
+    <TopBar title="Settings" :no-back="tab" />
+    <div class="min-h-0 flex-1 overflow-y-auto" :class="tab ? '' : 'pb-(--safe-bottom)'">
       <div class="px-4 pb-2">
         <div class="overflow-hidden rounded-lg shadow-[0_6px_18px_rgba(0,0,0,.3)]">
           <Board :fen="preview" movable="none" :last-move="['e5', 'c6']" />
@@ -81,5 +84,6 @@ function setFlag(key: keyof Settings, value: boolean) {
         </label>
       </div>
     </div>
+    <TabBar v-if="tab" />
   </div>
 </template>

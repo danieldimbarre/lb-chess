@@ -5,6 +5,7 @@ import { initTheme } from './stores/theme';
 import { componentsReady } from './bridge/nui';
 import { preloadPieces } from './chess/pieces';
 import Toasts from './components/Toasts.vue';
+import ChallengeBanner from './components/ChallengeBanner.vue';
 
 preloadPieces();
 
@@ -22,6 +23,7 @@ onMounted(async () => {
     <Transition :name="`route-${router.direction}`">
       <component :is="view" :key="route.key" v-bind="route.props" class="absolute inset-0" />
     </Transition>
+    <ChallengeBanner />
     <Toasts />
   </div>
 </template>

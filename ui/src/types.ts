@@ -64,6 +64,7 @@ export interface GameSnapshot {
   reason?: EndReason;
   ratingDelta?: { w: number; b: number };
   rematch?: { by: Color; challengeId: string } | null;
+  disconnectDeadline?: number | null;
 }
 
 export interface Challenge {
