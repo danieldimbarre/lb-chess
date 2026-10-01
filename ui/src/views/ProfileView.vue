@@ -23,7 +23,6 @@ interface GameRow {
   reason: string;
   tc: string;
   moves: number;
-  pgn: string;
   createdAt: number;
 }
 
@@ -61,10 +60,16 @@ function ago(ts: number) {
   return t('profile.daysAgo', { n: Math.floor(s / 86400) });
 }
 
-function open(g: GameRow) {
+let opening = false;
+async function open(g: GameRow) {
+  // History rows don't carry the PGN; fetch it only for the game being opened.
+  if (opening) return;
+  opening = true;
+  const res = await request('game:pgn', { id: g.id }).finally(() => (opening = false));
+  if (!res?.ok) return showError(res?.error);
   const c = new Chess();
   try {
-    c.loadPgn(g.pgn);
+    c.loadPgn(res.pgn);
   } catch {
     return showError('server_error');
   }

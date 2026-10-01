@@ -92,7 +92,6 @@ export interface HistoryGame {
   reason: EndReason;
   tc: string;
   moves: number;
-  pgn: string;
   createdAt: number;
 }
 

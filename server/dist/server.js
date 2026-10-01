@@ -3623,9 +3623,12 @@
   var START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   var SQUARE = /^[a-h][1-8]$/;
   var USERNAME = /^[A-Za-z0-9_]+$/;
+  var HOUR = 60 * 60 * 1e3;
+  var SWEEP_INTERVAL = 60 * 1e3;
   var fail = (error) => ({ ok: false, error });
   var other = (c) => c === "w" ? "b" : "w";
   var tcKey = (tc) => `${tc.base}+${tc.inc}`;
+  var pairKey = (a, b) => a < b ? `${a}:${b}` : `${b}:${a}`;
   var ChessService = class {
     constructor({ db, push, notify, isOnline, now = Date.now, config: config2, log: log2 = () => {
     } }) {
@@ -3644,6 +3647,13 @@
       this.games = /* @__PURE__ */ new Map();
       this.playerGame = /* @__PURE__ */ new Map();
       this.seq = 0;
+      this.lbCache = /* @__PURE__ */ new Map();
+      this.rankCache = /* @__PURE__ */ new Map();
+      this.pairGames = /* @__PURE__ */ new Map();
+      this.pending = /* @__PURE__ */ new Set();
+      this.lastSweep = this.now();
+      this.lastPrune = 0;
+      this.pruning = false;
     }
     // Helpers ------------------------------------------------------------------------
     id(prefix) {
@@ -3654,6 +3664,11 @@
       const row = await this.db.getPlayer(passport);
       if (row) this.profiles.set(passport, row);
       return row;
+    }
+    validName(value) {
+      const username = String(value ?? "").trim();
+      if (username.length < this.cfg.usernameMin || username.length > this.cfg.usernameMax || !USERNAME.test(username)) return null;
+      return username;
     }
     publicProfile(p) {
       if (!p) return null;
@@ -3686,6 +3701,11 @@
     }
     colorOf(game, passport) {
       return game.white === passport ? "w" : game.black === passport ? "b" : null;
+    }
+    /** Clock time `color` has left right now (its clock only runs on its own turn after ply 2). */
+    remaining(game, color) {
+      const running = game.moves.length >= 2 && game.chess.turn() === color;
+      return game.clocks[color] - (running ? this.now() - game.turnStartedAt : 0);
     }
     snapshot(game, passport) {
       return {
@@ -3741,6 +3761,16 @@
         this.push(game[color === "w" ? "black" : "white"], "game:opponent", { id: game.id, connected: true, deadline: null });
       }
     }
+    /** Tracks a background write so tests / shutdown can wait for it. */
+    track(promise) {
+      const p = Promise.resolve(promise).catch((err) => this.log("background task failed", err));
+      this.pending.add(p);
+      p.finally(() => this.pending.delete(p));
+      return p;
+    }
+    async flush() {
+      while (this.pending.size) await Promise.allSettled([...this.pending]);
+    }
     // Requests -------------------------------------------------------------------------
     localeOf(passport) {
       return this.locales.get(passport) ?? toLocale(this.cfg.defaultLocale) ?? "en";
@@ -3772,20 +3802,21 @@
     }
     async register({ passport, data }) {
       if (await this.profile(passport)) return fail("already_registered");
-      const username = String(data.username ?? "").trim();
-      if (username.length < this.cfg.usernameMin || username.length > this.cfg.usernameMax || !USERNAME.test(username)) return fail("username_invalid");
+      const username = this.validName(data.username);
+      if (!username) return fail("username_invalid");
       try {
         const row = await this.db.createPlayer(passport, username);
         this.profiles.set(passport, row);
         return { ok: true, me: this.publicProfile(row) };
       } catch (err) {
+        if ((err == null ? void 0 : err.code) === "ER_DUP_PASSPORT") return fail("already_registered");
         if ((err == null ? void 0 : err.code) === "ER_DUP_ENTRY") return fail("username_taken");
         throw err;
       }
     }
     async checkName({ data }) {
-      const username = String(data.username ?? "").trim();
-      if (username.length < this.cfg.usernameMin || username.length > this.cfg.usernameMax || !USERNAME.test(username)) return { ok: true, available: false, reason: "username_invalid" };
+      const username = this.validName(data.username);
+      if (!username) return { ok: true, available: false, reason: "username_invalid" };
       return { ok: true, available: !await this.db.getPlayerByName(username) };
     }
     async queueJoin({ passport, data }) {
@@ -3802,11 +3833,12 @@
         list.splice(list.indexOf(opponent), 1);
         if (!list.length) this.queues.delete(key);
         this.removeFromQueues(opponent.passport);
-        const [white, black] = Math.random() < 0.5 ? [passport, opponent.passport] : [opponent.passport, passport];
-        await this.startGame(white, black, tc);
+        const oppProfile = this.profiles.get(opponent.passport) ?? opponent.profile;
+        const mine = Math.random() < 0.5;
+        this.startGame(mine ? passport : opponent.passport, mine ? opponent.passport : passport, tc, mine ? me : oppProfile, mine ? oppProfile : me);
         return { ok: true, matched: true };
       }
-      const entry = { passport, tc, since: this.now() };
+      const entry = { passport, profile: me, tc, since: this.now() };
       list.push(entry);
       this.queues.set(key, list);
       this.push(passport, "queue:status", { queue: { tc, since: entry.since } });
@@ -3818,25 +3850,28 @@
       return { ok: true };
     }
     async challengeSend({ passport, data }) {
-      const me = await this.profile(passport);
-      if (!me) return fail("no_profile");
-      if (this.playerGame.has(passport)) return fail("in_game");
       const tc = this.validTc(data.tc);
       if (!tc) return fail("invalid_tc");
+      const username = this.validName(data.username);
+      if (!username) return fail("not_found");
       const color = ["w", "b", "random"].includes(data.color) ? data.color : "random";
-      const target = await this.db.getPlayerByName(String(data.username ?? "").trim());
+      const me = await this.profile(passport);
+      if (!me) return fail("no_profile");
+      const target = await this.db.getPlayerByName(username);
       if (!target) return fail("not_found");
+      const targetProfile = await this.profile(target.passport) ?? target;
+      if (this.playerGame.has(passport)) return fail("in_game");
       if (target.passport === passport) return fail("self");
       if (!this.isOnline(target.passport)) return fail("offline");
       if (this.playerGame.has(target.passport)) return fail("busy");
+      let outgoing = 0;
       for (const c of this.challenges.values()) {
         if (c.from === passport && c.to === target.passport) return fail("already_challenged");
-        if (c.from === target.passport && c.to === passport && !data.rematchOf) return this.challengeAccept({ passport, data: { id: c.id } });
+        if (c.from === target.passport && c.to === passport) return this.challengeAccept({ passport, data: { id: c.id } });
+        if (c.from === passport) outgoing++;
       }
-      const outgoing = [...this.challenges.values()].filter((c) => c.from === passport).length;
       if (outgoing >= 5) return fail("too_many_challenges");
-      const targetProfile = await this.profile(target.passport) ?? target;
-      return { ok: true, challenge: this.createChallenge(passport, me, target.passport, targetProfile, tc, color, data.rematchOf) };
+      return { ok: true, challenge: this.createChallenge(passport, me, target.passport, targetProfile, tc, color, null) };
     }
     createChallenge(from, fromProfile, to, toProfile, tc, color, rematchOf) {
       const c = {
@@ -3875,9 +3910,11 @@
       this.push(c.from, "challenge:update", { id: c.id, status: "accepted" });
       this.removeFromQueues(passport);
       this.removeFromQueues(c.from);
+      const fromProfile = this.profiles.get(c.from) ?? c.fromProfile;
+      const toProfile = this.profiles.get(c.to) ?? c.toProfile;
       const challengerWhite = c.color === "w" || c.color === "random" && Math.random() < 0.5;
-      const game = await this.startGame(challengerWhite ? c.from : c.to, challengerWhite ? c.to : c.from, c.tc);
-      for (const o of [...this.challenges.values()]) {
+      const game = challengerWhite ? this.startGame(c.from, c.to, c.tc, fromProfile, toProfile) : this.startGame(c.to, c.from, c.tc, toProfile, fromProfile);
+      for (const o of this.challenges.values()) {
         if ([c.from, c.to].includes(o.from) || [c.from, c.to].includes(o.to)) this.expireChallenge(o, "cancelled");
       }
       return { ok: true, gameId: game.id };
@@ -3913,15 +3950,15 @@
       }
     }
     // Games -------------------------------------------------------------------------------
-    async startGame(white, black, tc) {
-      const wp = await this.profile(white);
-      const bp = await this.profile(black);
+    /** Synchronous on purpose: both players are reserved in the same tick as the caller's checks. */
+    startGame(white, black, tc, wp, bp) {
       const now = this.now();
       const game = {
         id: this.id("g"),
         white,
         black,
         players: { w: this.playerRef(wp), b: this.playerRef(bp) },
+        profileRefs: { w: wp, b: bp },
         tc,
         chess: new import_chess.Chess(),
         initialFen: START_FEN,
@@ -3959,7 +3996,7 @@
       const from = String(data.from ?? "");
       const to = String(data.to ?? "");
       const promotion = data.promotion ? String(data.promotion) : void 0;
-      if (!SQUARE.test(from) || !SQUARE.test(to) || (promotion && !"qrbn".includes(promotion) || promotion && promotion.length !== 1)) return fail("illegal");
+      if (!SQUARE.test(from) || !SQUARE.test(to) || promotion && !/^[qrbn]$/.test(promotion)) return fail("illegal");
       if (game.chess.turn() !== color) return fail("not_your_turn");
       if (Number(data.ply) !== game.moves.length) return fail("stale");
       const now = this.now();
@@ -3968,7 +4005,7 @@
         const left = game.clocks[color] - (now - game.turnStartedAt);
         if (left <= 0) {
           game.clocks[color] = 0;
-          await this.flag(game, color);
+          this.flag(game, color);
           return fail("game_over");
         }
         game.clocks[color] = left + game.tc.inc * 1e3;
@@ -3996,11 +4033,11 @@
         drawOffer: null
       }));
       const c = game.chess;
-      if (c.isCheckmate()) await this.finish(game, color === "w" ? "1-0" : "0-1", "checkmate");
-      else if (c.isStalemate()) await this.finish(game, "1/2-1/2", "stalemate");
-      else if (c.isInsufficientMaterial()) await this.finish(game, "1/2-1/2", "insufficient");
-      else if (c.isThreefoldRepetition()) await this.finish(game, "1/2-1/2", "threefold");
-      else if (c.isDraw()) await this.finish(game, "1/2-1/2", "fifty");
+      if (c.isCheckmate()) this.finish(game, color === "w" ? "1-0" : "0-1", "checkmate");
+      else if (c.isStalemate()) this.finish(game, "1/2-1/2", "stalemate");
+      else if (c.isInsufficientMaterial()) this.finish(game, "1/2-1/2", "insufficient");
+      else if (c.isThreefoldRepetition()) this.finish(game, "1/2-1/2", "threefold");
+      else if (c.isDrawByFiftyMoves()) this.finish(game, "1/2-1/2", "fifty");
       return { ok: true };
     }
     hasMatingMaterial(game, color) {
@@ -4013,7 +4050,7 @@
         }
       return minors >= 2;
     }
-    async flag(game, color) {
+    flag(game, color) {
       const winner = other(color);
       if (!this.hasMatingMaterial(game, winner)) return this.finish(game, "1/2-1/2", "timeout_insufficient");
       return this.finish(game, winner === "w" ? "1-0" : "0-1", "timeout");
@@ -4021,15 +4058,15 @@
     async resign({ passport, data }) {
       const { game, color, error } = this.playingGame(passport, data.id);
       if (error) return fail(error);
-      if (game.moves.length < 2) await this.finish(game, null, "aborted");
-      else await this.finish(game, color === "w" ? "0-1" : "1-0", "resignation");
+      if (game.moves.length < 2) this.finish(game, null, "aborted");
+      else this.finish(game, color === "w" ? "0-1" : "1-0", "resignation");
       return { ok: true };
     }
     async abort({ passport, data }) {
       const { game, error } = this.playingGame(passport, data.id);
       if (error) return fail(error);
       if (game.moves.length >= 2) return fail("cannot_abort");
-      await this.finish(game, null, "aborted");
+      this.finish(game, null, "aborted");
       return { ok: true };
     }
     async draw({ passport, data }) {
@@ -4038,7 +4075,7 @@
       const action = data.action;
       if (action === "offer" || action === "accept") {
         if (game.drawOffer === other(color)) {
-          await this.finish(game, "1/2-1/2", "agreement");
+          this.finish(game, "1/2-1/2", "agreement");
           return { ok: true };
         }
         if (action === "accept") return fail("no_offer");
@@ -4064,8 +4101,10 @@
         if (game.rematch.by !== color) return this.challengeAccept({ passport, data: { id: game.rematch.challengeId } });
         return { ok: true };
       }
-      const me = await this.profile(passport);
-      const oppProfile = await this.profile(opp);
+      const me = await this.profile(passport) ?? game.profileRefs[color];
+      const oppProfile = await this.profile(opp) ?? game.profileRefs[other(color)];
+      if (game.rematch) return { ok: true };
+      if (this.playerGame.has(passport)) return fail("in_game");
       if (!this.isOnline(opp)) return fail("offline");
       if (this.playerGame.has(opp)) return fail("busy");
       const c = this.createChallenge(passport, me, opp, oppProfile, game.tc, other(color), game.id);
@@ -4073,7 +4112,11 @@
       this.pushGame(game, "game:rematch", () => ({ id: game.id, rematch: game.rematch }));
       return { ok: true };
     }
-    async finish(game, result, reason) {
+    /**
+     * Ends a game. Synchronous: the in-memory state and the game:end push happen immediately,
+     * persistence runs in the background so a slow database never stalls moves or the tick loop.
+     */
+    finish(game, result, reason) {
       if (game.status !== "playing") return;
       game.status = "ended";
       game.reason = reason;
@@ -4085,33 +4128,59 @@
       }
       this.playerGame.delete(game.white);
       this.playerGame.delete(game.black);
+      game.expiresAt = this.now() + 5 * 60 * 1e3;
+      let rated = false;
       if (reason === "aborted") {
         game.result = void 0;
       } else {
         game.result = result;
-        await this.applyResult(game, result, reason);
+        try {
+          rated = this.applyResult(game, result, reason);
+        } catch (err) {
+          this.log("failed to apply result", err);
+        }
       }
       this.pushGame(game, "game:end", (p) => ({
         id: game.id,
         result: game.result,
         reason,
+        rated,
         clocks: { ...game.clocks },
-        me: this.publicProfile(this.profiles.get(p))
+        me: this.publicProfile(this.profiles.get(p) ?? game.profileRefs[this.colorOf(game, p)])
       }));
-      game.expiresAt = this.now() + 5 * 60 * 1e3;
     }
-    async applyResult(game, result, reason) {
-      const wp = await this.profile(game.white);
-      const bp = await this.profile(game.black);
-      const update = (p, score) => {
-        p.games += 1;
-        if (score === 1) p.wins += 1;
-        else if (score === 0) p.losses += 1;
-        else p.draws += 1;
-      };
+    /** Anti win-trading: short games and repeated games between the same pair don't count. */
+    isRated(game) {
+      if (game.moves.length < (this.cfg.minRatedPlies ?? 0)) return false;
+      const cap = this.cfg.maxRatedGamesPerPairPerHour ?? 0;
+      if (!cap) return true;
+      const key = pairKey(game.white, game.black);
+      const now = this.now();
+      const recent = (this.pairGames.get(key) ?? []).filter((t) => now - t < HOUR);
+      if (recent.length >= cap) {
+        this.pairGames.set(key, recent);
+        return false;
+      }
+      recent.push(now);
+      this.pairGames.set(key, recent);
+      return true;
+    }
+    /** Updates cached stats right away and persists in the background. Returns whether the game was rated. */
+    applyResult(game, result, reason) {
+      const rated = this.isRated(game);
       const sw = result === "1-0" ? 1 : result === "0-1" ? 0 : 0.5;
-      update(wp, sw);
-      update(bp, 1 - sw);
+      if (rated) {
+        const update = (p, score) => {
+          if (!p) return;
+          p.games += 1;
+          if (score === 1) p.wins += 1;
+          else if (score === 0) p.losses += 1;
+          else p.draws += 1;
+        };
+        update(this.profiles.get(game.white) ?? game.profileRefs.w, sw);
+        update(this.profiles.get(game.black) ?? game.profileRefs.b, 1 - sw);
+        for (const key of this.rankCache.keys()) if (key.endsWith(`:${game.white}`) || key.endsWith(`:${game.black}`)) this.rankCache.delete(key);
+      }
       const pgnGame = game.chess;
       pgnGame.setHeader("Event", "LB Chess");
       pgnGame.setHeader("Site", "Los Santos");
@@ -4119,25 +4188,27 @@
       pgnGame.setHeader("White", game.players.w.username);
       pgnGame.setHeader("Black", game.players.b.username);
       pgnGame.setHeader("Result", result);
-      pgnGame.setHeader("TimeControl", `${game.tc.base}+${game.tc.inc}`);
+      pgnGame.setHeader("TimeControl", tcKey(game.tc));
       pgnGame.setHeader("Termination", reason);
-      try {
-        await this.db.updatePlayer(game.white, wp);
-        await this.db.updatePlayer(game.black, bp);
-        await this.db.insertGame({
-          white: game.white,
-          black: game.black,
-          whiteName: game.players.w.username,
-          blackName: game.players.b.username,
-          result,
-          reason,
-          tc: `${game.tc.base}+${game.tc.inc}`,
-          moves: game.moves.length,
-          pgn: pgnGame.pgn()
-        });
-      } catch (err) {
-        this.log("failed to persist game", err);
-      }
+      const record = {
+        white: game.white,
+        black: game.black,
+        whiteName: game.players.w.username,
+        blackName: game.players.b.username,
+        result,
+        reason,
+        tc: tcKey(game.tc),
+        moves: game.moves.length,
+        pgn: pgnGame.pgn()
+      };
+      this.track(
+        this.db.recordGame(record, rated ? { white: sw, black: 1 - sw } : null).catch((err) => {
+          this.log("failed to persist game", err);
+          if (!this.playerGame.has(game.white)) this.profiles.delete(game.white);
+          if (!this.playerGame.has(game.black)) this.profiles.delete(game.black);
+        })
+      );
+      return rated;
     }
     async state({ passport, data }) {
       const game = this.games.get(String(data.id));
@@ -4146,17 +4217,36 @@
       return { ok: true, game: this.snapshot(game, passport) };
     }
     // Social ---------------------------------------------------------------------------------
+    cacheTtl() {
+      return (this.cfg.leaderboardCacheSeconds ?? 30) * 1e3;
+    }
+    async leaderboardRows(sort, min) {
+      const hit = this.lbCache.get(sort);
+      if (hit && this.now() - hit.at < this.cacheTtl()) return hit.rows;
+      const rows = await this.db.leaderboard(sort, min, this.cfg.leaderboardSize);
+      this.lbCache.set(sort, { at: this.now(), rows });
+      return rows;
+    }
+    async rankOf(p, sort, min) {
+      if (!p) return null;
+      const key = `${sort}:${p.passport}`;
+      const hit = this.rankCache.get(key);
+      if (hit && this.now() - hit.at < this.cacheTtl()) return hit.rank;
+      const rank = await this.db.rankOf(p, sort, min);
+      this.rankCache.set(key, { at: this.now(), rank });
+      return rank;
+    }
     async leaderboard({ passport, data }) {
       const sort = ["games", "winrate", "wins"].includes(data.sort) ? data.sort : "games";
       const min = this.cfg.leaderboardMinGames;
-      const rows = await this.db.leaderboard(sort, min, this.cfg.leaderboardSize);
+      const rows = await this.leaderboardRows(sort, min);
       const me = await this.profile(passport);
       return {
         ok: true,
         sort,
         minGames: min,
         rows: rows.map((p, i) => ({ rank: i + 1, ...this.row(p) })),
-        me: me ? { rank: await this.db.rankOf(passport, sort, min), ...this.row(me) } : null
+        me: me ? { rank: await this.rankOf(me, sort, min), ...this.row(me) } : null
       };
     }
     row(p) {
@@ -4171,7 +4261,14 @@
       };
     }
     async profileInfo({ passport, data }) {
-      const target = data.username ? await this.db.getPlayerByName(String(data.username)) : await this.profile(passport);
+      let target;
+      if (data.username !== void 0 && data.username !== null && data.username !== "") {
+        const username = this.validName(data.username);
+        if (!username) return fail("not_found");
+        target = await this.db.getPlayerByName(username);
+      } else {
+        target = await this.profile(passport);
+      }
       if (!target) return fail("not_found");
       const fresh = this.profiles.get(target.passport) ?? target;
       const games = await this.db.recentGames(target.passport, 15);
@@ -4181,7 +4278,8 @@
         isMe: target.passport === passport,
         online: this.isOnline(target.passport),
         playing: this.playerGame.has(target.passport),
-        rank: await this.db.rankOf(target.passport, "games", this.cfg.leaderboardMinGames),
+        rank: await this.rankOf(fresh, "games", this.cfg.leaderboardMinGames),
+        // PGNs are not included; the app fetches one with game:pgn when a game is opened.
         games: games.map((g) => ({
           id: g.id,
           white: g.whiteName,
@@ -4190,14 +4288,19 @@
           reason: g.reason,
           tc: g.tc,
           moves: g.moves,
-          pgn: g.pgn,
           createdAt: g.createdAt
         }))
       };
     }
+    async gamePgn({ data }) {
+      const id = Number(data.id);
+      if (!Number.isSafeInteger(id) || id <= 0) return fail("not_found");
+      const pgn = await this.db.getGamePgn(id);
+      return pgn ? { ok: true, pgn } : fail("not_found");
+    }
     async search({ passport, data }) {
       const q = String(data.q ?? "").trim();
-      if (!q || !USERNAME.test(q)) return { ok: true, players: [] };
+      if (!q || q.length > this.cfg.usernameMax || !USERNAME.test(q)) return { ok: true, players: [] };
       const rows = await this.db.searchPlayers(q, 8);
       return {
         ok: true,
@@ -4207,42 +4310,96 @@
     // Lifecycle --------------------------------------------------------------------------------
     onDisconnect(passport) {
       this.removeFromQueues(passport);
-      for (const c of [...this.challenges.values()]) if (c.from === passport || c.to === passport) this.expireChallenge(c, "cancelled");
+      for (const c of this.challenges.values()) if (c.from === passport || c.to === passport) this.expireChallenge(c, "cancelled");
       const gameId = this.playerGame.get(passport);
       const game = gameId && this.games.get(gameId);
-      if (!game) return;
+      if (!game) {
+        this.profiles.delete(passport);
+        this.locales.delete(passport);
+        return;
+      }
       const color = this.colorOf(game, passport);
-      const deadline = this.now() + this.cfg.disconnectGraceSeconds * 1e3;
+      let grace = this.cfg.disconnectGraceSeconds * 1e3;
+      if (game.moves.length >= 2) grace = Math.min(grace, Math.max(this.cfg.minDisconnectGraceSeconds ?? 10, 0) * 1e3 + Math.max(0, this.remaining(game, color)));
+      const deadline = this.now() + grace;
       game.disconnect[color] = deadline;
       this.push(color === "w" ? game.black : game.white, "game:opponent", { id: game.id, connected: false, deadline });
     }
+    /** Drops cached data of players that left without a disconnect event reaching us. */
+    sweep(now) {
+      for (const passport of this.profiles.keys()) {
+        if (this.playerGame.has(passport) || this.isOnline(passport)) continue;
+        this.profiles.delete(passport);
+        this.locales.delete(passport);
+      }
+      for (const passport of this.locales.keys()) if (!this.profiles.has(passport) && !this.isOnline(passport)) this.locales.delete(passport);
+      for (const [key, list] of this.pairGames) {
+        const recent = list.filter((t) => now - t < HOUR);
+        if (recent.length) this.pairGames.set(key, recent);
+        else this.pairGames.delete(key);
+      }
+      for (const [key, v] of this.rankCache) if (now - v.at >= this.cacheTtl()) this.rankCache.delete(key);
+    }
+    prune() {
+      const days = this.cfg.gameHistoryDays ?? 0;
+      if (!days || this.pruning || !this.db.pruneGames) return;
+      this.pruning = true;
+      this.track(
+        (async () => {
+          let removed = 0;
+          let n;
+          do {
+            n = await this.db.pruneGames(days, 1e3);
+            removed += n;
+          } while (n >= 1e3);
+          if (removed) this.log(`pruned ${removed} old games`);
+        })().finally(() => {
+          this.pruning = false;
+        })
+      );
+    }
     async tick() {
       const now = this.now();
-      for (const c of [...this.challenges.values()]) if (c.expiresAt <= now) this.expireChallenge(c, "expired");
-      for (const game of [...this.games.values()]) {
-        if (game.status !== "playing") {
-          if (game.expiresAt && game.expiresAt <= now) this.games.delete(game.id);
-          continue;
+      for (const c of this.challenges.values()) if (c.expiresAt <= now) this.expireChallenge(c, "expired");
+      for (const game of this.games.values()) {
+        try {
+          this.tickGame(game, now);
+        } catch (err) {
+          this.log(`tick failed for game ${game.id}`, err);
         }
-        if (game.firstMoveDeadline && game.firstMoveDeadline <= now) {
-          await this.finish(game, null, "aborted");
-          continue;
+      }
+      if (now - this.lastSweep >= SWEEP_INTERVAL) {
+        this.lastSweep = now;
+        this.sweep(now);
+      }
+      if (now - this.lastPrune >= HOUR) {
+        this.lastPrune = now;
+        this.prune();
+      }
+    }
+    tickGame(game, now) {
+      if (game.status !== "playing") {
+        if (game.expiresAt && game.expiresAt <= now) this.games.delete(game.id);
+        return;
+      }
+      if (game.firstMoveDeadline && game.firstMoveDeadline <= now) {
+        this.finish(game, null, "aborted");
+        return;
+      }
+      if (game.moves.length >= 2) {
+        const side = game.chess.turn();
+        if (game.clocks[side] - (now - game.turnStartedAt) <= 0) {
+          game.clocks[side] = 0;
+          this.flag(game, side);
+          return;
         }
-        if (game.moves.length >= 2) {
-          const side = game.chess.turn();
-          if (game.clocks[side] - (now - game.turnStartedAt) <= 0) {
-            game.clocks[side] = 0;
-            await this.flag(game, side);
-            continue;
-          }
-        }
-        for (const color of ["w", "b"]) {
-          const d = game.disconnect[color];
-          if (d && d <= now) {
-            if (game.moves.length < 2) await this.finish(game, null, "aborted");
-            else await this.finish(game, color === "w" ? "0-1" : "1-0", "abandoned");
-            break;
-          }
+      }
+      for (const color of ["w", "b"]) {
+        const d = game.disconnect[color];
+        if (d && d <= now) {
+          if (game.moves.length < 2) this.finish(game, null, "aborted");
+          else this.finish(game, color === "w" ? "0-1" : "1-0", "abandoned");
+          return;
         }
       }
     }
@@ -4269,6 +4426,7 @@
         "game:draw": (ctx) => this.draw(ctx),
         "game:rematch": (ctx) => this.rematch(ctx),
         "game:state": (ctx) => this.state(ctx),
+        "game:pgn": (ctx) => this.gamePgn(ctx),
         leaderboard: (ctx) => this.leaderboard(ctx),
         profile: (ctx) => this.profileInfo(ctx),
         search: (ctx) => this.search(ctx)
@@ -4277,21 +4435,31 @@
   };
 
   // src/db.js
-  function call(method, sql, params = []) {
+  var QUERY_TIMEOUT_MS = 1e4;
+  function call(method, ...args) {
     return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`oxmysql.${method} timed out`)), QUERY_TIMEOUT_MS);
       try {
-        globalThis.exports.oxmysql[method](sql, params, (result) => resolve(result));
+        globalThis.exports.oxmysql[method](...args, (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        });
       } catch (err) {
+        clearTimeout(timer);
         reject(err);
       }
     });
   }
-  var query = (sql, params) => call("query", sql, params);
+  var query = (sql, params = []) => call("query", sql, params);
   var single = async (sql, params) => {
     var _a;
     return ((_a = await query(sql, params)) == null ? void 0 : _a[0]) ?? null;
   };
   var SCHEMA = [
+    `CREATE TABLE IF NOT EXISTS chess_meta (
+    k VARCHAR(32) NOT NULL PRIMARY KEY,
+    v INT NOT NULL
+  ) DEFAULT CHARSET=utf8mb4`,
     `CREATE TABLE IF NOT EXISTS chess_players (
     passport INT NOT NULL PRIMARY KEY,
     username VARCHAR(16) NOT NULL,
@@ -4299,10 +4467,12 @@
     wins INT NOT NULL DEFAULT 0,
     losses INT NOT NULL DEFAULT 0,
     draws INT NOT NULL DEFAULT 0,
+    winrate DECIMAL(7,6) AS (IF(games > 0, wins / games, 0)) STORED,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_chess_username (username),
-    KEY idx_chess_games (games),
-    KEY idx_chess_wins (wins)
+    KEY idx_chess_games_wins (games, wins),
+    KEY idx_chess_wins_games (wins, games),
+    KEY idx_chess_winrate_games (winrate, games)
   ) DEFAULT CHARSET=utf8mb4`,
     `CREATE TABLE IF NOT EXISTS chess_games (
     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -4316,19 +4486,60 @@
     moves INT NOT NULL DEFAULT 0,
     pgn TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    KEY idx_chess_white (white),
-    KEY idx_chess_black (black)
+    KEY idx_chess_white_id (white, id),
+    KEY idx_chess_black_id (black, id),
+    KEY idx_chess_created (created_at)
   ) DEFAULT CHARSET=utf8mb4`
   ];
-  var LEGACY_COLUMNS = [
-    ["chess_players", "rating"],
-    ["chess_players", "peak"],
-    ["chess_games", "white_rating"],
-    ["chess_games", "black_rating"],
-    ["chess_games", "white_delta"],
-    ["chess_games", "black_delta"]
+  var hasColumn = async (table, column) => {
+    var _a;
+    return Number(
+      (_a = await single("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?", [table, column])) == null ? void 0 : _a.n
+    ) > 0;
+  };
+  var hasIndex = async (table, index) => {
+    var _a;
+    return Number(
+      (_a = await single("SELECT COUNT(*) AS n FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?", [table, index])) == null ? void 0 : _a.n
+    ) > 0;
+  };
+  var MIGRATIONS = [
+    // 1: drop the old Elo columns.
+    async () => {
+      const legacy = [
+        ["chess_players", "rating"],
+        ["chess_players", "peak"],
+        ["chess_games", "white_rating"],
+        ["chess_games", "black_rating"],
+        ["chess_games", "white_delta"],
+        ["chess_games", "black_delta"]
+      ];
+      for (const [table, column] of legacy) if (await hasColumn(table, column)) await query(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+    },
+    // 2: indexes that match the leaderboard / history queries, plus an indexable win rate.
+    async () => {
+      if (!await hasColumn("chess_players", "winrate")) {
+        await query("ALTER TABLE chess_players ADD COLUMN winrate DECIMAL(7,6) AS (IF(games > 0, wins / games, 0)) STORED");
+      }
+      const players = [
+        ["idx_chess_games_wins", "(games, wins)"],
+        ["idx_chess_wins_games", "(wins, games)"],
+        ["idx_chess_winrate_games", "(winrate, games)"]
+      ];
+      for (const [name, cols] of players) if (!await hasIndex("chess_players", name)) await query(`ALTER TABLE chess_players ADD KEY ${name} ${cols}`);
+      for (const name of ["idx_chess_games", "idx_chess_wins"]) if (await hasIndex("chess_players", name)) await query(`ALTER TABLE chess_players DROP KEY ${name}`);
+      const games = [
+        ["idx_chess_white_id", "(white, id)"],
+        ["idx_chess_black_id", "(black, id)"],
+        ["idx_chess_created", "(created_at)"]
+      ];
+      for (const [name, cols] of games) if (!await hasIndex("chess_games", name)) await query(`ALTER TABLE chess_games ADD KEY ${name} ${cols}`);
+      for (const name of ["idx_chess_white", "idx_chess_black"]) if (await hasIndex("chess_games", name)) await query(`ALTER TABLE chess_games DROP KEY ${name}`);
+    }
   ];
-  var PLAYER_COLS = "passport, username, games, wins, losses, draws, UNIX_TIMESTAMP(created_at) * 1000 AS createdAt";
+  var PLAYER_COLS = "passport, username, games, wins, losses, draws, winrate, UNIX_TIMESTAMP(created_at) * 1000 AS createdAt";
+  var GAME_LIST_COLS = "id, white, black, white_name, black_name, result, reason, time_control, moves, created_at";
+  var mapPlayer = (r) => r ? { ...r, winrate: Number(r.winrate), createdAt: Number(r.createdAt) } : null;
   var mapGame = (r) => ({
     id: r.id,
     white: r.white,
@@ -4339,12 +4550,11 @@
     reason: r.reason,
     tc: r.time_control,
     moves: r.moves,
-    pgn: r.pgn,
     createdAt: Number(r.createdAt)
   });
   var ORDER = {
     games: "games DESC, wins DESC",
-    winrate: "(wins / games) DESC, games DESC",
+    winrate: "winrate DESC, games DESC",
     wins: "wins DESC, games DESC"
   };
   var WHERE = {
@@ -4355,72 +4565,102 @@
   function createMysqlDb() {
     return {
       async init() {
+        var _a;
         for (const sql of SCHEMA) await query(sql);
-        for (const [table, column] of LEGACY_COLUMNS) {
-          const found = await single("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?", [table, column]);
-          if (Number(found == null ? void 0 : found.n)) await query(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+        const version = Number(((_a = await single("SELECT v FROM chess_meta WHERE k = 'schema'")) == null ? void 0 : _a.v) ?? 0);
+        for (let i = version; i < MIGRATIONS.length; i++) {
+          await MIGRATIONS[i]();
+          await query("INSERT INTO chess_meta (k, v) VALUES ('schema', ?) ON DUPLICATE KEY UPDATE v = VALUES(v)", [i + 1]);
         }
       },
-      getPlayer: (passport) => single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE passport = ?`, [passport]),
-      getPlayerByName: (username) => single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE username = ?`, [username]),
+      getPlayer: async (passport) => mapPlayer(await single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE passport = ?`, [passport])),
+      getPlayerByName: async (username) => mapPlayer(await single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE username = ?`, [username])),
       async createPlayer(passport, username) {
         const res = await query("INSERT IGNORE INTO chess_players (passport, username) VALUES (?, ?)", [passport, username]);
-        if (!res || !res.affectedRows) throw Object.assign(new Error("dup"), { code: "ER_DUP_ENTRY" });
-        return single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE passport = ?`, [passport]);
+        if (!res || !res.affectedRows) {
+          const byPassport = await single("SELECT 1 AS x FROM chess_players WHERE passport = ?", [passport]);
+          throw Object.assign(new Error("dup"), { code: byPassport ? "ER_DUP_PASSPORT" : "ER_DUP_ENTRY" });
+        }
+        return mapPlayer(await single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE passport = ?`, [passport]));
       },
-      async updatePlayer(passport, f) {
-        await query("UPDATE chess_players SET games = ?, wins = ?, losses = ?, draws = ? WHERE passport = ?", [
-          f.games,
-          f.wins,
-          f.losses,
-          f.draws,
-          passport
-        ]);
-      },
-      async insertGame(g) {
-        const res = await query(
-          `INSERT INTO chess_games (white, black, white_name, black_name, result, reason, time_control, moves, pgn)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [g.white, g.black, g.whiteName, g.blackName, g.result, g.reason, g.tc, g.moves, g.pgn]
-        );
-        return (res == null ? void 0 : res.insertId) ?? 0;
+      /**
+       * Stores a finished game and, when rated, applies both players' stats atomically.
+       * Increments (not absolute values) so concurrent writes can never lose an update.
+       * `scores` = { white: 1 | 0.5 | 0, black: ... } or null for unrated games.
+       */
+      async recordGame(g, scores) {
+        const queries = [];
+        if (scores) {
+          for (const [passport, s] of [
+            [g.white, scores.white],
+            [g.black, scores.black]
+          ]) {
+            queries.push({
+              query: "UPDATE chess_players SET games = games + 1, wins = wins + ?, losses = losses + ?, draws = draws + ? WHERE passport = ?",
+              values: [s === 1 ? 1 : 0, s === 0 ? 1 : 0, s === 0.5 ? 1 : 0, passport]
+            });
+          }
+        }
+        queries.push({
+          query: `INSERT INTO chess_games (white, black, white_name, black_name, result, reason, time_control, moves, pgn)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          values: [g.white, g.black, g.whiteName, g.blackName, g.result, g.reason, g.tc, g.moves, g.pgn]
+        });
+        const ok = await call("transaction", queries);
+        if (!ok) throw new Error("recordGame transaction failed");
       },
       async leaderboard(sort, minGames, limit) {
         const params = sort === "winrate" ? [minGames, limit] : [limit];
-        return await query(`SELECT ${PLAYER_COLS} FROM chess_players WHERE ${WHERE[sort]} ORDER BY ${ORDER[sort]} LIMIT ?`, params) ?? [];
+        return (await query(`SELECT ${PLAYER_COLS} FROM chess_players WHERE ${WHERE[sort]} ORDER BY ${ORDER[sort]} LIMIT ?`, params) ?? []).map(mapPlayer);
       },
-      async rankOf(passport, sort, minGames) {
-        const me = await single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE passport = ?`, [passport]);
+      /** `me` is the player's row (from cache); ranks are range scans on the composite indexes. */
+      async rankOf(me, sort, minGames) {
         if (!me) return null;
+        let r;
         if (sort === "games") {
           if (!me.games) return null;
-          const r2 = await single("SELECT COUNT(*) AS n FROM chess_players WHERE games > ? OR (games = ? AND wins > ?)", [me.games, me.games, me.wins]);
-          return Number((r2 == null ? void 0 : r2.n) ?? 0) + 1;
-        }
-        if (sort === "winrate") {
+          r = await single("SELECT COUNT(*) AS n FROM chess_players WHERE games > ? OR (games = ? AND wins > ?)", [me.games, me.games, me.wins]);
+        } else if (sort === "winrate") {
           if (me.games < minGames) return null;
-          const r2 = await single("SELECT COUNT(*) AS n FROM chess_players WHERE games >= ? AND ((wins / games) > ? OR ((wins / games) = ? AND games > ?))", [
+          const row = await single("SELECT winrate FROM chess_players WHERE passport = ?", [me.passport]);
+          if (!row) return null;
+          r = await single("SELECT COUNT(*) AS n FROM chess_players WHERE games >= ? AND (winrate > ? OR (winrate = ? AND games > ?))", [
             minGames,
-            me.wins / me.games,
-            me.wins / me.games,
+            row.winrate,
+            row.winrate,
             me.games
           ]);
-          return Number((r2 == null ? void 0 : r2.n) ?? 0) + 1;
+        } else {
+          if (!me.games) return null;
+          r = await single("SELECT COUNT(*) AS n FROM chess_players WHERE wins > ? OR (wins = ? AND games > ?)", [me.wins, me.wins, me.games]);
         }
-        if (!me.games) return null;
-        const r = await single("SELECT COUNT(*) AS n FROM chess_players WHERE games > 0 AND (wins > ? OR (wins = ? AND games > ?))", [me.wins, me.wins, me.games]);
         return Number((r == null ? void 0 : r.n) ?? 0) + 1;
       },
       async recentGames(passport, limit) {
         const rows = await query(
-          "SELECT *, UNIX_TIMESTAMP(created_at) * 1000 AS createdAt FROM chess_games WHERE white = ? OR black = ? ORDER BY id DESC LIMIT ?",
-          [passport, passport, limit]
+          `SELECT *, UNIX_TIMESTAMP(created_at) * 1000 AS createdAt FROM (
+           (SELECT ${GAME_LIST_COLS} FROM chess_games WHERE white = ? ORDER BY id DESC LIMIT ?)
+           UNION ALL
+           (SELECT ${GAME_LIST_COLS} FROM chess_games WHERE black = ? ORDER BY id DESC LIMIT ?)
+         ) t ORDER BY id DESC LIMIT ?`,
+          [passport, limit, passport, limit, limit]
         );
         return (rows ?? []).map(mapGame);
       },
+      async getGamePgn(id) {
+        var _a;
+        return ((_a = await single("SELECT pgn FROM chess_games WHERE id = ?", [id])) == null ? void 0 : _a.pgn) ?? null;
+      },
       async searchPlayers(prefix, limit) {
-        const safe = String(prefix).replace(/[%_\\]/g, (c) => "\\" + c);
-        return await query(`SELECT ${PLAYER_COLS} FROM chess_players WHERE username LIKE ? ORDER BY CHAR_LENGTH(username) LIMIT ?`, [safe + "%", limit]) ?? [];
+        const safe = String(prefix).replace(/[!%_]/g, (c) => "!" + c);
+        return (await query(`SELECT ${PLAYER_COLS} FROM chess_players WHERE username LIKE ? ESCAPE '!' ORDER BY CHAR_LENGTH(username) LIMIT ?`, [safe + "%", limit]) ?? []).map(
+          mapPlayer
+        );
+      },
+      /** Deletes history older than `days`, in small batches to keep locks short. Returns rows removed. */
+      async pruneGames(days, batch = 1e3) {
+        const res = await query("DELETE FROM chess_games WHERE created_at < (NOW() - INTERVAL ? DAY) LIMIT ?", [days, batch]);
+        return (res == null ? void 0 : res.affectedRows) ?? 0;
       }
     };
   }
@@ -4467,6 +4707,7 @@
     }
   });
   var handlers = service.handlers();
+  var ready = false;
   var buckets = /* @__PURE__ */ new Map();
   function allow(src) {
     const now = Date.now();
@@ -4476,17 +4717,45 @@
       buckets.set(src, b);
     }
     b.count++;
-    return b.count <= config.maxRequestsPerSecond;
+    if (b.count <= config.maxRequestsPerSecond) return "allow";
+    return b.count === config.maxRequestsPerSecond + 1 ? "limited" : "drop";
+  }
+  var COOLDOWNS = {
+    leaderboard: 1e3,
+    profile: 500,
+    "game:pgn": 250,
+    search: 250,
+    checkName: 250,
+    register: 1e3,
+    "challenge:send": 500
+  };
+  var lastCall = /* @__PURE__ */ new Map();
+  function cooledDown(passport, name) {
+    const ms = COOLDOWNS[name];
+    if (!ms) return true;
+    const key = `${passport}:${name}`;
+    const now = Date.now();
+    const last = lastCall.get(key) ?? 0;
+    if (now - last < ms) return false;
+    lastCall.set(key, now);
+    return true;
+  }
+  function forgetCooldowns(passport) {
+    for (const name of Object.keys(COOLDOWNS)) lastCall.delete(`${passport}:${name}`);
   }
   onNet("lb-chess:req", async (id, name, data) => {
-    const src = source;
+    const src = Number(source);
     const reply = (result) => emitNet("lb-chess:res", src, id, result);
-    if (!allow(src)) return reply({ ok: false, error: "rate_limited" });
+    const verdict = allow(src);
+    if (verdict === "drop") return;
+    if (verdict === "limited") return reply({ ok: false, error: "rate_limited" });
     if (typeof name !== "string" || !Object.prototype.hasOwnProperty.call(handlers, name)) return reply({ ok: false, error: "unknown_request" });
+    if (!ready) return reply({ ok: false, error: "not_ready" });
     const passport = passportOf(src);
     if (!passport) return reply({ ok: false, error: "no_passport" });
     sources.set(passport, src);
     passports.set(src, passport);
+    if (!cooledDown(passport, name)) return reply({ ok: false, error: "rate_limited" });
     try {
       reply(await handlers[name]({ src, passport, data: data && typeof data === "object" ? data : {} }));
     } catch (err) {
@@ -4495,20 +4764,21 @@
     }
   });
   function dropped(passport, src) {
+    buckets.delete(src);
+    passports.delete(src);
     if (!passport) return;
     if (sources.get(passport) === src) sources.delete(passport);
-    passports.delete(src);
-    buckets.delete(src);
+    forgetCooldowns(passport);
     service.onDisconnect(passport);
   }
   on("Disconnect", (passport, src) => dropped(Number(passport), Number(src)));
   on("playerDropped", () => {
     const src = Number(source);
-    dropped(passports.get(src), src);
+    dropped(passports.get(src) ?? null, src);
   });
   var ticking = false;
   setInterval(async () => {
-    if (ticking) return;
+    if (ticking || !ready) return;
     ticking = true;
     try {
       await service.tick();
@@ -4518,14 +4788,17 @@
       ticking = false;
     }
   }, 250);
-  setImmediate(async () => {
+  async function init() {
     try {
       await service.db.init();
+      ready = true;
       log("database ready");
     } catch (err) {
-      log("database init failed", err);
+      log("database init failed, retrying in 30s", err);
+      setTimeout(init, 3e4);
     }
-  });
+  }
+  setImmediate(init);
 })();
 /*! Bundled license information:
 

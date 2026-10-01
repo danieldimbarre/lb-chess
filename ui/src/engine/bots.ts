@@ -1,4 +1,4 @@
-import { Position, Searcher, moveToUci, type SearchInfo } from './engine.ts';
+import { Position, Searcher, moveToUci, runSync, type SearchInfo } from './engine.ts';
 
 export interface BotProfile {
   id: string;
@@ -108,6 +108,14 @@ function bookMove(pos: Position, startFen: string, moves: string[]): string | nu
 }
 
 export function botMove(bot: BotProfile, startFen: string, moves: string[]): string | null {
+  return runSync(botMoveSteps(bot, startFen, moves));
+}
+
+/**
+ * Step-wise botMove (yields between search iterations / root moves).
+ * `maxTimeMs` caps the thinking time, used when the engine has to share the UI thread.
+ */
+export function* botMoveSteps(bot: BotProfile, startFen: string, moves: string[], maxTimeMs = Infinity): Generator<void, string | null> {
   const pos = positionFrom(startFen, moves);
   const legal = pos.legalMoves();
   if (!legal.length) return null;
@@ -120,7 +128,7 @@ export function botMove(bot: BotProfile, startFen: string, moves: string[]): str
   }
 
   if (bot.rootDepth) {
-    const scored = searcher.rootScores(pos, bot.rootDepth);
+    const scored = yield* searcher.rootScoresSteps(pos, bot.rootDepth, Math.min(1500, maxTimeMs));
     if (!scored.length) return moveToUci(legal[0]);
     const best = scored[0].score;
     // Weak bots never miss a mate in one, it feels broken otherwise.
@@ -141,14 +149,23 @@ export function botMove(bot: BotProfile, startFen: string, moves: string[]): str
     return moveToUci(pick.move);
   }
 
-  const { move } = searcher.think(pos, { maxDepth: bot.maxDepth, timeMs: bot.timeMs });
+  const { move } = yield* searcher.thinkSteps(pos, { maxDepth: bot.maxDepth, timeMs: Math.min(bot.timeMs ?? 1000, maxTimeMs) });
   return move ? moveToUci(move) : moveToUci(legal[0]);
 }
 
 export function analyze(startFen: string, moves: string[], timeMs: number, onInfo: (info: SearchInfo, whiteToMove: boolean) => void) {
+  return runSync(analyzeSteps(startFen, moves, timeMs, onInfo));
+}
+
+export function* analyzeSteps(
+  startFen: string,
+  moves: string[],
+  timeMs: number,
+  onInfo: (info: SearchInfo, whiteToMove: boolean) => void,
+): Generator<void, SearchInfo | null> {
   const pos = positionFrom(startFen, moves);
   const white = pos.side === 0;
   if (!pos.legalMoves().length) return null;
-  const { info } = searcher.think(pos, { timeMs, onInfo: (i) => onInfo(i, white) });
+  const { info } = yield* searcher.thinkSteps(pos, { timeMs, onInfo: (i) => onInfo(i, white) });
   return info;
 }

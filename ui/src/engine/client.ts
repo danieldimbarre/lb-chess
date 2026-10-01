@@ -28,10 +28,13 @@ function getWorker(): Worker | null {
   return worker;
 }
 
+/** Longest the engine may think in one go when it has to share the UI thread. */
+const MAIN_THREAD_BUDGET_MS = 500;
+
 async function mainThread() {
-  // Let the UI paint (e.g. "thinking" dots) before blocking.
+  // Let the UI paint (e.g. "thinking" dots) before starting.
   await new Promise((r) => setTimeout(r, 30));
-  return import('./bots.ts');
+  return Promise.all([import('./bots.ts'), import('./engine.ts')]);
 }
 
 export async function requestBotMove(bot: string, fen: string, moves: string[]): Promise<string | null> {
@@ -45,8 +48,11 @@ export async function requestBotMove(bot: string, fen: string, moves: string[]):
     pending.delete(id);
     if (res.type === 'move') return res.uci;
   }
-  const m = await mainThread();
-  return m.botMove(m.botById(bot), fen, moves);
+  // Fallback: capped budget, and the search yields between iterations so the NUI keeps rendering.
+  const [bots, engine] = await mainThread();
+  // Both share one Searcher: stop any main-thread analysis before it resumes on a clobbered state.
+  analysisId = -1;
+  return (await engine.runAsync(bots.botMoveSteps(bots.botById(bot), fen, moves, MAIN_THREAD_BUDGET_MS))) ?? null;
 }
 
 export interface EvalInfo {
@@ -67,13 +73,8 @@ let analysisId = -1;
 
 /** Streams evaluation updates; a newer call cancels delivery of older ones. */
 export async function requestAnalysis(fen: string, moves: string[], timeMs: number, onInfo: (e: EvalInfo) => void): Promise<void> {
-  // A search can't be interrupted from outside; restart the worker when a new position comes in.
-  if (worker && pending.has(analysisId)) {
-    worker.terminate();
-    worker = null;
-    for (const cb of pending.values()) cb({ type: 'error' });
-    pending.clear();
-  }
+  // The worker cancels an older analysis by itself when a newer message arrives (see engine.worker.ts),
+  // so the worker and its transposition table are reused instead of being re-spawned per position.
   const w = getWorker();
   const id = seq++;
   analysisId = id;
@@ -91,7 +92,10 @@ export async function requestAnalysis(fen: string, moves: string[], timeMs: numb
     });
     return;
   }
-  const m = await mainThread();
+  const [bots, engine] = await mainThread();
   if (analysisId !== id) return;
-  m.analyze(fen, moves, Math.min(timeMs, 600), (i, white) => analysisId === id && onInfo(toWhite(i, white)));
+  await engine.runAsync(
+    bots.analyzeSteps(fen, moves, Math.min(timeMs, MAIN_THREAD_BUDGET_MS), (i, white) => analysisId === id && onInfo(toWhite(i, white))),
+    () => analysisId !== id,
+  );
 }

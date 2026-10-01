@@ -19,9 +19,15 @@
   "challengeExpireSeconds": 60,
   "firstMoveSeconds": 30,
   "disconnectGraceSeconds": 60,
+  "minDisconnectGraceSeconds": 10,
   "leaderboardMinGames": 5,
   "leaderboardSize": 50,
+  "leaderboardCacheSeconds": 30,
   "maxRequestsPerSecond": 15,
+
+  "minRatedPlies": 10,
+  "maxRatedGamesPerPairPerHour": 3,
+  "gameHistoryDays": 90,
 
   "minBaseMinutes": 1,
   "maxBaseMinutes": 60,

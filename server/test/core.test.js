@@ -4,7 +4,9 @@ import { readFileSync } from 'node:fs';
 import { ChessService } from '../src/core.js';
 import { createMemoryDb } from '../src/memorydb.js';
 
-const config = JSON.parse(readFileSync(new URL('../../config.json', import.meta.url)));
+const baseConfig = JSON.parse(readFileSync(new URL('../../config.json', import.meta.url)));
+// Anti win-trading rules are covered by their own tests; the rest use short games.
+const config = { ...baseConfig, minRatedPlies: 0, maxRatedGamesPerPairPerHour: 0 };
 
 let clock;
 let pushes;
@@ -12,14 +14,14 @@ let notes;
 let online;
 let svc;
 
-function setup() {
+function setup(cfg = config) {
   clock = 1_000_000;
   pushes = [];
   notes = [];
   online = new Set([1, 2, 3]);
   svc = new ChessService({
     db: createMemoryDb(),
-    config,
+    config: cfg,
     now: () => clock,
     isOnline: (p) => online.has(p),
     push: (passport, action, data) => pushes.push({ passport, action, data }),
@@ -55,9 +57,10 @@ async function play(g, moves) {
     assert.equal(res.ok, true, `${uci}: ${res.error}`);
     ply++;
   }
+  await svc.flush();
 }
 
-beforeEach(setup);
+beforeEach(() => setup());
 
 test('register validates and rejects duplicates case-insensitively', async () => {
   assert.equal((await call('register', 1, { username: 'a' })).error, 'username_invalid');
@@ -107,7 +110,10 @@ test('fool’s mate ends the game, updates stats and stores the PGN', async () =
   assert.equal(lb.rows[0].games, 1);
   const prof = await call('profile', g.black);
   assert.equal(prof.profile.wins, 1);
-  assert.match(prof.games[0].pgn, /Qh4#/);
+  assert.equal(prof.games[0].pgn, undefined); // lists never carry PGNs
+  const pgn = await call('game:pgn', g.black, { id: prof.games[0].id });
+  assert.match(pgn.pgn, /Qh4#/);
+  assert.equal((await call('game:pgn', g.black, { id: 'x' })).error, 'not_found');
   assert.equal(svc.playerGame.size, 0);
 });
 
@@ -300,4 +306,96 @@ test('search excludes self and returns presence', async () => {
   const r = await call('search', 1, { q: 'b' });
   assert.deepEqual(r.players.map((p) => p.username), ['Bob']);
   assert.equal((await call('search', 1, { q: "'; drop" })).players.length, 0);
+});
+
+test('short games and repeated pairings are unrated (anti win-trading)', async () => {
+  setup({ ...config, minRatedPlies: 10, maxRatedGamesPerPairPerHour: 1 });
+  const g = await startedGame();
+  await play(g, ['f2f3', 'e7e5', 'g2g4', 'd8h4']); // 4 plies < 10
+  assert.equal(last(g.white, 'game:end').rated, false);
+  assert.equal((await call('profile', g.black)).profile.games, 0);
+  assert.equal((await call('profile', g.black)).games.length, 1); // still in history
+
+  // A long enough game counts, the next one between the same pair within the hour does not.
+  const long = ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'f8c5', 'b1c3', 'g8f6', 'd2d3', 'd7d6'];
+  const g2 = await (async () => {
+    await call('queue:join', 1, { tc: { base: 300, inc: 2 } });
+    await call('queue:join', 2, { tc: { base: 300, inc: 2 } });
+    const s = last(1, 'game:start');
+    const white = s.myColor === 'w' ? 1 : 2;
+    return { id: s.id, white, black: white === 1 ? 2 : 1 };
+  })();
+  await play(g2, long);
+  await call('game:resign', g2.white, { id: g2.id });
+  await svc.flush();
+  assert.equal(last(1, 'game:end').rated, true);
+  assert.equal(last(1, 'game:end').me.games, 1);
+
+  await call('queue:join', 1, { tc: { base: 300, inc: 2 } });
+  await call('queue:join', 2, { tc: { base: 300, inc: 2 } });
+  const s3 = last(1, 'game:start');
+  const w3 = s3.myColor === 'w' ? 1 : 2;
+  await play({ id: s3.id, white: w3, black: w3 === 1 ? 2 : 1 }, long);
+  await call('game:resign', w3, { id: s3.id });
+  await svc.flush();
+  assert.equal(last(1, 'game:end').rated, false);
+  assert.equal((await call('profile', 1)).profile.games, 1);
+});
+
+test('concurrent accepts cannot put a player in two games', async () => {
+  await registered();
+  const a = await call('challenge:send', 1, { username: 'Carol', tc: { base: 300, inc: 0 } });
+  const b = await call('challenge:send', 2, { username: 'Carol', tc: { base: 300, inc: 0 } });
+  const [r1, r2] = await Promise.all([call('challenge:accept', 3, { id: a.challenge.id }), call('challenge:accept', 3, { id: b.challenge.id })]);
+  assert.equal([r1, r2].filter((r) => r.ok).length, 1);
+  assert.equal(svc.games.size, 1);
+});
+
+test('concurrent queue joins pair each player once', async () => {
+  await registered();
+  const tc = { base: 180, inc: 0 };
+  await Promise.all([call('queue:join', 1, { tc }), call('queue:join', 2, { tc }), call('queue:join', 3, { tc })]);
+  assert.equal(svc.games.size, 1);
+  assert.equal(svc.playerGame.size, 2);
+});
+
+test('disconnect grace never exceeds the leaver clock', async () => {
+  const g = await startedGame({ base: 20, inc: 0 });
+  await play(g, ['e2e4', 'e7e5']);
+  svc.onDisconnect(g.white); // white to move with 20s left
+  const deadline = last(g.black, 'game:opponent').deadline;
+  assert.equal(deadline - clock, (config.minDisconnectGraceSeconds + 20) * 1000);
+  assert.ok(deadline - clock < config.disconnectGraceSeconds * 1000);
+});
+
+test('client cannot forge rematch challenges or oversized lookups', async () => {
+  await registered();
+  const c = await call('challenge:send', 1, { username: 'Bob', tc: { base: 300, inc: 0 }, rematchOf: 'g123' });
+  assert.equal(c.challenge.rematchOf, undefined);
+  assert.equal((await call('profile', 1, { username: 'x'.repeat(10_000) })).error, 'not_found');
+  assert.equal((await call('challenge:send', 1, { username: 'x'.repeat(10_000), tc: { base: 300, inc: 0 } })).error, 'not_found');
+});
+
+test('a slow database does not delay game end', async () => {
+  const g = await startedGame();
+  let release;
+  svc.db.recordGame = () => new Promise((r) => (release = r));
+  await call('game:move', g.white, { id: g.id, from: 'f2', to: 'f3', ply: 0 });
+  await call('game:move', g.black, { id: g.id, from: 'e7', to: 'e5', ply: 1 });
+  await call('game:move', g.white, { id: g.id, from: 'g2', to: 'g4', ply: 2 });
+  await call('game:move', g.black, { id: g.id, from: 'd8', to: 'h4', ply: 3 });
+  assert.equal(last(g.white, 'game:end').reason, 'checkmate'); // pushed before the write finished
+  assert.equal(svc.pending.size, 1);
+  release();
+  await svc.flush();
+  assert.equal(svc.pending.size, 0);
+});
+
+test('disconnect outside a game drops cached profile and locale', async () => {
+  await registered();
+  await call('bootstrap', 1, { locale: 'pt' });
+  assert.ok(svc.profiles.has(1));
+  svc.onDisconnect(1);
+  assert.equal(svc.profiles.has(1), false);
+  assert.equal(svc.locales.has(1), false);
 });

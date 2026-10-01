@@ -937,6 +937,15 @@ export class Searcher {
 
   /** Iterative deepening search. Returns the best move (0 if none) and the last completed info. */
   think(pos: Position, opts: SearchOptions = {}): { move: number; info: SearchInfo | null } {
+    return runSync(this.thinkSteps(pos, opts));
+  }
+
+  /**
+   * Same as think(), but yields after every completed depth so the caller can pause
+   * (let the UI breathe) or abandon the search. Resuming later is only valid if no
+   * other search ran on this Searcher in between.
+   */
+  *thinkSteps(pos: Position, opts: SearchOptions = {}): Generator<void, { move: number; info: SearchInfo | null }> {
     const maxDepth = Math.min(opts.maxDepth ?? 64, MAX_PLY - 8);
     const timeMs = opts.timeMs ?? 1000;
     const start = Date.now();
@@ -975,12 +984,18 @@ export class Searcher {
       if (mate !== null && Math.abs(mate) * 2 < depth) break;
       // Don't start an iteration that would very likely not finish.
       if (Date.now() - start > timeMs * 0.55) break;
+      yield;
     }
     return { move: bestMove, info: lastInfo };
   }
 
   /** Scores every legal root move with a fixed-depth search (used for weaker, human-like bots). */
   rootScores(pos: Position, depth: number, timeMs = 1500): { move: number; score: number }[] {
+    return runSync(this.rootScoresSteps(pos, depth, timeMs));
+  }
+
+  /** rootScores() that yields after each root move. */
+  *rootScoresSteps(pos: Position, depth: number, timeMs = 1500): Generator<void, { move: number; score: number }[]> {
     this.pos = pos;
     this.deadline = Date.now() + timeMs;
     this.stopped = false;
@@ -991,8 +1006,33 @@ export class Searcher {
       const s = depth <= 1 ? -this.quiesce(-INF, INF, 1) : -this.search(depth - 1, -INF, INF, 1, true);
       pos.unmake(m);
       out.push({ move: m, score: this.stopped ? -INF : s });
+      yield;
     }
     return out.filter((r) => r.score > -INF).sort((a, b) => b.score - a.score);
+  }
+}
+
+/** Drives a step generator to completion without pausing. */
+export function runSync<T>(gen: Generator<void, T>): T {
+  for (;;) {
+    const r = gen.next();
+    if (r.done) return r.value;
+  }
+}
+
+/**
+ * Drives a step generator, yielding to the event loop between steps so pending messages /
+ * input get handled. Returns undefined if `cancelled()` turns true between two steps.
+ */
+export async function runAsync<T>(gen: Generator<void, T>, cancelled: () => boolean = () => false): Promise<T | undefined> {
+  for (;;) {
+    const r = gen.next();
+    if (r.done) return r.value;
+    await new Promise((res) => setTimeout(res, 0));
+    if (cancelled()) {
+      gen.return(undefined as T);
+      return undefined;
+    }
   }
 }
 

@@ -51,9 +51,11 @@ const service = new ChessService({
 });
 
 const handlers = service.handlers();
+let ready = false;
 
-// Per-source window: at most maxRequestsPerSecond requests each second.
+// Per-source window: at most maxRequestsPerSecond requests each second. Keys are always numbers.
 const buckets = new Map();
+/** 'allow' | 'limited' (reply once) | 'drop' (silently ignore, no reply amplification) */
 function allow(src) {
   const now = Date.now();
   let b = buckets.get(src);
@@ -62,20 +64,50 @@ function allow(src) {
     buckets.set(src, b);
   }
   b.count++;
-  return b.count <= config.maxRequestsPerSecond;
+  if (b.count <= config.maxRequestsPerSecond) return 'allow';
+  return b.count === config.maxRequestsPerSecond + 1 ? 'limited' : 'drop';
+}
+
+// Minimum spacing (ms) per passport for requests that hit the database.
+const COOLDOWNS = {
+  leaderboard: 1000,
+  profile: 500,
+  'game:pgn': 250,
+  search: 250,
+  checkName: 250,
+  register: 1000,
+  'challenge:send': 500,
+};
+const lastCall = new Map(); // `${passport}:${name}` -> timestamp
+function cooledDown(passport, name) {
+  const ms = COOLDOWNS[name];
+  if (!ms) return true;
+  const key = `${passport}:${name}`;
+  const now = Date.now();
+  const last = lastCall.get(key) ?? 0;
+  if (now - last < ms) return false;
+  lastCall.set(key, now);
+  return true;
+}
+function forgetCooldowns(passport) {
+  for (const name of Object.keys(COOLDOWNS)) lastCall.delete(`${passport}:${name}`);
 }
 
 onNet('lb-chess:req', async (id, name, data) => {
-  const src = source;
+  const src = Number(source);
   const reply = (result) => emitNet('lb-chess:res', src, id, result);
 
-  if (!allow(src)) return reply({ ok: false, error: 'rate_limited' });
+  const verdict = allow(src);
+  if (verdict === 'drop') return;
+  if (verdict === 'limited') return reply({ ok: false, error: 'rate_limited' });
   if (typeof name !== 'string' || !Object.prototype.hasOwnProperty.call(handlers, name)) return reply({ ok: false, error: 'unknown_request' });
+  if (!ready) return reply({ ok: false, error: 'not_ready' });
 
   const passport = passportOf(src);
   if (!passport) return reply({ ok: false, error: 'no_passport' });
   sources.set(passport, src);
   passports.set(src, passport);
+  if (!cooledDown(passport, name)) return reply({ ok: false, error: 'rate_limited' });
 
   try {
     reply(await handlers[name]({ src, passport, data: data && typeof data === 'object' ? data : {} }));
@@ -86,23 +118,26 @@ onNet('lb-chess:req', async (id, name, data) => {
 });
 
 function dropped(passport, src) {
+  // Always release per-source state, even for sources that never resolved a passport.
+  buckets.delete(src);
+  passports.delete(src);
   if (!passport) return;
   if (sources.get(passport) === src) sources.delete(passport);
-  passports.delete(src);
-  buckets.delete(src);
+  forgetCooldowns(passport);
   service.onDisconnect(passport);
 }
 
 // vRP fires Disconnect(Passport, source) before forgetting the player; playerDropped is the fallback.
+// Both may fire for one drop: onDisconnect is idempotent.
 on('Disconnect', (passport, src) => dropped(Number(passport), Number(src)));
 on('playerDropped', () => {
   const src = Number(source);
-  dropped(passports.get(src), src);
+  dropped(passports.get(src) ?? null, src);
 });
 
 let ticking = false;
 setInterval(async () => {
-  if (ticking) return;
+  if (ticking || !ready) return;
   ticking = true;
   try {
     await service.tick();
@@ -113,11 +148,14 @@ setInterval(async () => {
   }
 }, 250);
 
-setImmediate(async () => {
+async function init() {
   try {
     await service.db.init();
+    ready = true;
     log('database ready');
   } catch (err) {
-    log('database init failed', err);
+    log('database init failed, retrying in 30s', err);
+    setTimeout(init, 30_000);
   }
-});
+}
+setImmediate(init);

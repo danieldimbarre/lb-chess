@@ -295,6 +295,7 @@ const pt: Messages = {
     timeout: 'O servidor não respondeu. Tente de novo.',
     network: 'Problema de conexão.',
     rate_limited: 'Vá com calma.',
+    not_ready: 'O servidor de xadrez está iniciando. Tente de novo em instantes.',
     no_passport: 'Personagem ainda não carregado.',
     no_profile: 'Crie seu nome de usuário primeiro.',
     username_taken: 'Esse nome de usuário já está em uso.',

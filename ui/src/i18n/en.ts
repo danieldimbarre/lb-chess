@@ -293,6 +293,7 @@ const en = {
     timeout: 'Server did not respond. Try again.',
     network: 'Connection problem.',
     rate_limited: 'Slow down a little.',
+    not_ready: 'Chess server is starting. Try again in a moment.',
     no_passport: 'Character not loaded yet.',
     no_profile: 'Create your username first.',
     username_taken: 'That username is already taken.',

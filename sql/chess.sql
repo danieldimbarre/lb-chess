@@ -1,4 +1,9 @@
--- lb-chess creates these tables automatically on start. Kept here for manual installs.
+-- lb-chess creates and migrates these tables automatically on start. Kept here for manual installs.
+
+CREATE TABLE IF NOT EXISTS chess_meta (
+  k VARCHAR(32) NOT NULL PRIMARY KEY,
+  v INT NOT NULL
+) DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS chess_players (
   passport INT NOT NULL PRIMARY KEY,
@@ -7,10 +12,12 @@ CREATE TABLE IF NOT EXISTS chess_players (
   wins INT NOT NULL DEFAULT 0,
   losses INT NOT NULL DEFAULT 0,
   draws INT NOT NULL DEFAULT 0,
+  winrate DECIMAL(7,6) AS (IF(games > 0, wins / games, 0)) STORED,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_chess_username (username),
-  KEY idx_chess_games (games),
-  KEY idx_chess_wins (wins)
+  KEY idx_chess_games_wins (games, wins),
+  KEY idx_chess_wins_games (wins, games),
+  KEY idx_chess_winrate_games (winrate, games)
 ) DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS chess_games (
@@ -25,6 +32,10 @@ CREATE TABLE IF NOT EXISTS chess_games (
   moves INT NOT NULL DEFAULT 0,
   pgn TEXT NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  KEY idx_chess_white (white),
-  KEY idx_chess_black (black)
+  KEY idx_chess_white_id (white, id),
+  KEY idx_chess_black_id (black, id),
+  KEY idx_chess_created (created_at)
 ) DEFAULT CHARSET=utf8mb4;
+
+-- Tables created from this file are already at the latest schema.
+INSERT INTO chess_meta (k, v) VALUES ('schema', 2) ON DUPLICATE KEY UPDATE v = GREATEST(v, 2);

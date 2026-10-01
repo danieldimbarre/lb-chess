@@ -4,10 +4,13 @@ import { msg, tcText, toLocale } from './i18n.js';
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const SQUARE = /^[a-h][1-8]$/;
 const USERNAME = /^[A-Za-z0-9_]+$/;
+const HOUR = 60 * 60 * 1000;
+const SWEEP_INTERVAL = 60 * 1000;
 
 const fail = (error) => ({ ok: false, error });
 const other = (c) => (c === 'w' ? 'b' : 'w');
 const tcKey = (tc) => `${tc.base}+${tc.inc}`;
+const pairKey = (a, b) => (a < b ? `${a}:${b}` : `${b}:${a}`);
 
 /**
  * Authoritative chess server logic. Framework-agnostic: all I/O goes through
@@ -32,17 +35,29 @@ export class ChessService {
     this.cfg = config;
     this.log = log;
 
-    /** @type {Map<number, any>} passport -> profile row */
+    /** @type {Map<number, any>} passport -> profile row (online players only, see sweep()) */
     this.profiles = new Map();
     /** passport -> 'en' | 'pt', reported by the phone app */
     this.locales = new Map();
-    /** @type {Map<string, {passport:number, tc:any, since:number}[]>} */
+    /** @type {Map<string, {passport:number, profile:any, tc:any, since:number}[]>} */
     this.queues = new Map();
     this.challenges = new Map();
     this.games = new Map();
     /** passport -> game id (only while playing) */
     this.playerGame = new Map();
     this.seq = 0;
+
+    /** sort -> { at, rows } */
+    this.lbCache = new Map();
+    /** `${sort}:${passport}` -> { at, rank } */
+    this.rankCache = new Map();
+    /** pair key -> timestamps of rated games between those two players */
+    this.pairGames = new Map();
+    /** in-flight persistence promises (see flush()) */
+    this.pending = new Set();
+    this.lastSweep = this.now();
+    this.lastPrune = 0;
+    this.pruning = false;
   }
 
   // Helpers ------------------------------------------------------------------------
@@ -56,6 +71,12 @@ export class ChessService {
     const row = await this.db.getPlayer(passport);
     if (row) this.profiles.set(passport, row);
     return row;
+  }
+
+  validName(value) {
+    const username = String(value ?? '').trim();
+    if (username.length < this.cfg.usernameMin || username.length > this.cfg.usernameMax || !USERNAME.test(username)) return null;
+    return username;
   }
 
   publicProfile(p) {
@@ -94,6 +115,12 @@ export class ChessService {
 
   colorOf(game, passport) {
     return game.white === passport ? 'w' : game.black === passport ? 'b' : null;
+  }
+
+  /** Clock time `color` has left right now (its clock only runs on its own turn after ply 2). */
+  remaining(game, color) {
+    const running = game.moves.length >= 2 && game.chess.turn() === color;
+    return game.clocks[color] - (running ? this.now() - game.turnStartedAt : 0);
   }
 
   snapshot(game, passport) {
@@ -155,6 +182,18 @@ export class ChessService {
     }
   }
 
+  /** Tracks a background write so tests / shutdown can wait for it. */
+  track(promise) {
+    const p = Promise.resolve(promise).catch((err) => this.log('background task failed', err));
+    this.pending.add(p);
+    p.finally(() => this.pending.delete(p));
+    return p;
+  }
+
+  async flush() {
+    while (this.pending.size) await Promise.allSettled([...this.pending]);
+  }
+
   // Requests -------------------------------------------------------------------------
 
   localeOf(passport) {
@@ -190,27 +229,30 @@ export class ChessService {
 
   async register({ passport, data }) {
     if (await this.profile(passport)) return fail('already_registered');
-    const username = String(data.username ?? '').trim();
-    if (username.length < this.cfg.usernameMin || username.length > this.cfg.usernameMax || !USERNAME.test(username)) return fail('username_invalid');
+    const username = this.validName(data.username);
+    if (!username) return fail('username_invalid');
     try {
       const row = await this.db.createPlayer(passport, username);
       this.profiles.set(passport, row);
       return { ok: true, me: this.publicProfile(row) };
     } catch (err) {
+      if (err?.code === 'ER_DUP_PASSPORT') return fail('already_registered');
       if (err?.code === 'ER_DUP_ENTRY') return fail('username_taken');
       throw err;
     }
   }
 
   async checkName({ data }) {
-    const username = String(data.username ?? '').trim();
-    if (username.length < this.cfg.usernameMin || username.length > this.cfg.usernameMax || !USERNAME.test(username)) return { ok: true, available: false, reason: 'username_invalid' };
+    const username = this.validName(data.username);
+    if (!username) return { ok: true, available: false, reason: 'username_invalid' };
     return { ok: true, available: !(await this.db.getPlayerByName(username)) };
   }
 
   async queueJoin({ passport, data }) {
     const me = await this.profile(passport);
     if (!me) return fail('no_profile');
+    // Everything below is synchronous: no other request can interleave between the
+    // checks and the game reservation, so a player can never be paired twice.
     if (this.playerGame.has(passport)) return fail('in_game');
     const tc = this.validTc(data.tc);
     if (!tc) return fail('invalid_tc');
@@ -223,11 +265,12 @@ export class ChessService {
       list.splice(list.indexOf(opponent), 1);
       if (!list.length) this.queues.delete(key);
       this.removeFromQueues(opponent.passport);
-      const [white, black] = Math.random() < 0.5 ? [passport, opponent.passport] : [opponent.passport, passport];
-      await this.startGame(white, black, tc);
+      const oppProfile = this.profiles.get(opponent.passport) ?? opponent.profile;
+      const mine = Math.random() < 0.5;
+      this.startGame(mine ? passport : opponent.passport, mine ? opponent.passport : passport, tc, mine ? me : oppProfile, mine ? oppProfile : me);
       return { ok: true, matched: true };
     }
-    const entry = { passport, tc, since: this.now() };
+    const entry = { passport, profile: me, tc, since: this.now() };
     list.push(entry);
     this.queues.set(key, list);
     this.push(passport, 'queue:status', { queue: { tc, since: entry.since } });
@@ -241,28 +284,34 @@ export class ChessService {
   }
 
   async challengeSend({ passport, data }) {
-    const me = await this.profile(passport);
-    if (!me) return fail('no_profile');
-    if (this.playerGame.has(passport)) return fail('in_game');
     const tc = this.validTc(data.tc);
     if (!tc) return fail('invalid_tc');
+    const username = this.validName(data.username);
+    if (!username) return fail('not_found');
     const color = ['w', 'b', 'random'].includes(data.color) ? data.color : 'random';
 
-    const target = await this.db.getPlayerByName(String(data.username ?? '').trim());
+    // All I/O first; the checks and the challenge creation below run without yielding.
+    const me = await this.profile(passport);
+    if (!me) return fail('no_profile');
+    const target = await this.db.getPlayerByName(username);
     if (!target) return fail('not_found');
+    const targetProfile = (await this.profile(target.passport)) ?? target;
+
+    if (this.playerGame.has(passport)) return fail('in_game');
     if (target.passport === passport) return fail('self');
     if (!this.isOnline(target.passport)) return fail('offline');
     if (this.playerGame.has(target.passport)) return fail('busy');
+    let outgoing = 0;
     for (const c of this.challenges.values()) {
       if (c.from === passport && c.to === target.passport) return fail('already_challenged');
       // Crossed challenges: accept the one already waiting for us.
-      if (c.from === target.passport && c.to === passport && !data.rematchOf) return this.challengeAccept({ passport, data: { id: c.id } });
+      if (c.from === target.passport && c.to === passport) return this.challengeAccept({ passport, data: { id: c.id } });
+      if (c.from === passport) outgoing++;
     }
-    const outgoing = [...this.challenges.values()].filter((c) => c.from === passport).length;
     if (outgoing >= 5) return fail('too_many_challenges');
 
-    const targetProfile = (await this.profile(target.passport)) ?? target;
-    return { ok: true, challenge: this.createChallenge(passport, me, target.passport, targetProfile, tc, color, data.rematchOf) };
+    // rematchOf is never taken from the client; only rematch() creates rematch challenges.
+    return { ok: true, challenge: this.createChallenge(passport, me, target.passport, targetProfile, tc, color, null) };
   }
 
   createChallenge(from, fromProfile, to, toProfile, tc, color, rematchOf) {
@@ -303,10 +352,12 @@ export class ChessService {
     this.push(c.from, 'challenge:update', { id: c.id, status: 'accepted' });
     this.removeFromQueues(passport);
     this.removeFromQueues(c.from);
+    const fromProfile = this.profiles.get(c.from) ?? c.fromProfile;
+    const toProfile = this.profiles.get(c.to) ?? c.toProfile;
     const challengerWhite = c.color === 'w' || (c.color === 'random' && Math.random() < 0.5);
-    const game = await this.startGame(challengerWhite ? c.from : c.to, challengerWhite ? c.to : c.from, c.tc);
+    const game = challengerWhite ? this.startGame(c.from, c.to, c.tc, fromProfile, toProfile) : this.startGame(c.to, c.from, c.tc, toProfile, fromProfile);
     // Other challenges involving either player are now moot.
-    for (const o of [...this.challenges.values()]) {
+    for (const o of this.challenges.values()) {
       if ([c.from, c.to].includes(o.from) || [c.from, c.to].includes(o.to)) this.expireChallenge(o, 'cancelled');
     }
     return { ok: true, gameId: game.id };
@@ -347,15 +398,15 @@ export class ChessService {
 
   // Games -------------------------------------------------------------------------------
 
-  async startGame(white, black, tc) {
-    const wp = await this.profile(white);
-    const bp = await this.profile(black);
+  /** Synchronous on purpose: both players are reserved in the same tick as the caller's checks. */
+  startGame(white, black, tc, wp, bp) {
     const now = this.now();
     const game = {
       id: this.id('g'),
       white,
       black,
       players: { w: this.playerRef(wp), b: this.playerRef(bp) },
+      profileRefs: { w: wp, b: bp },
       tc,
       chess: new Chess(),
       initialFen: START_FEN,
@@ -395,7 +446,7 @@ export class ChessService {
     const from = String(data.from ?? '');
     const to = String(data.to ?? '');
     const promotion = data.promotion ? String(data.promotion) : undefined;
-    if (!SQUARE.test(from) || !SQUARE.test(to) || (promotion && !'qrbn'.includes(promotion) || (promotion && promotion.length !== 1))) return fail('illegal');
+    if (!SQUARE.test(from) || !SQUARE.test(to) || (promotion && !/^[qrbn]$/.test(promotion))) return fail('illegal');
     if (game.chess.turn() !== color) return fail('not_your_turn');
     if (Number(data.ply) !== game.moves.length) return fail('stale');
 
@@ -406,7 +457,7 @@ export class ChessService {
       const left = game.clocks[color] - (now - game.turnStartedAt);
       if (left <= 0) {
         game.clocks[color] = 0;
-        await this.flag(game, color);
+        this.flag(game, color);
         return fail('game_over');
       }
       game.clocks[color] = left + game.tc.inc * 1000;
@@ -437,12 +488,14 @@ export class ChessService {
       drawOffer: null,
     }));
 
+    // isCheckmate/isStalemate each short-circuit on inCheck(), so exactly one move generation
+    // runs; the draw checks are O(1)/board scans. isDraw() would redo all of them.
     const c = game.chess;
-    if (c.isCheckmate()) await this.finish(game, color === 'w' ? '1-0' : '0-1', 'checkmate');
-    else if (c.isStalemate()) await this.finish(game, '1/2-1/2', 'stalemate');
-    else if (c.isInsufficientMaterial()) await this.finish(game, '1/2-1/2', 'insufficient');
-    else if (c.isThreefoldRepetition()) await this.finish(game, '1/2-1/2', 'threefold');
-    else if (c.isDraw()) await this.finish(game, '1/2-1/2', 'fifty');
+    if (c.isCheckmate()) this.finish(game, color === 'w' ? '1-0' : '0-1', 'checkmate');
+    else if (c.isStalemate()) this.finish(game, '1/2-1/2', 'stalemate');
+    else if (c.isInsufficientMaterial()) this.finish(game, '1/2-1/2', 'insufficient');
+    else if (c.isThreefoldRepetition()) this.finish(game, '1/2-1/2', 'threefold');
+    else if (c.isDrawByFiftyMoves()) this.finish(game, '1/2-1/2', 'fifty');
     return { ok: true };
   }
 
@@ -457,7 +510,7 @@ export class ChessService {
     return minors >= 2;
   }
 
-  async flag(game, color) {
+  flag(game, color) {
     const winner = other(color);
     if (!this.hasMatingMaterial(game, winner)) return this.finish(game, '1/2-1/2', 'timeout_insufficient');
     return this.finish(game, winner === 'w' ? '1-0' : '0-1', 'timeout');
@@ -466,8 +519,8 @@ export class ChessService {
   async resign({ passport, data }) {
     const { game, color, error } = this.playingGame(passport, data.id);
     if (error) return fail(error);
-    if (game.moves.length < 2) await this.finish(game, null, 'aborted');
-    else await this.finish(game, color === 'w' ? '0-1' : '1-0', 'resignation');
+    if (game.moves.length < 2) this.finish(game, null, 'aborted');
+    else this.finish(game, color === 'w' ? '0-1' : '1-0', 'resignation');
     return { ok: true };
   }
 
@@ -475,7 +528,7 @@ export class ChessService {
     const { game, error } = this.playingGame(passport, data.id);
     if (error) return fail(error);
     if (game.moves.length >= 2) return fail('cannot_abort');
-    await this.finish(game, null, 'aborted');
+    this.finish(game, null, 'aborted');
     return { ok: true };
   }
 
@@ -485,7 +538,7 @@ export class ChessService {
     const action = data.action;
     if (action === 'offer' || action === 'accept') {
       if (game.drawOffer === other(color)) {
-        await this.finish(game, '1/2-1/2', 'agreement');
+        this.finish(game, '1/2-1/2', 'agreement');
         return { ok: true };
       }
       if (action === 'accept') return fail('no_offer');
@@ -513,8 +566,11 @@ export class ChessService {
       if (game.rematch.by !== color) return this.challengeAccept({ passport, data: { id: game.rematch.challengeId } });
       return { ok: true };
     }
-    const me = await this.profile(passport);
-    const oppProfile = await this.profile(opp);
+    const me = (await this.profile(passport)) ?? game.profileRefs[color];
+    const oppProfile = (await this.profile(opp)) ?? game.profileRefs[other(color)];
+    // Re-check after the awaits: another request may have changed state meanwhile.
+    if (game.rematch) return { ok: true };
+    if (this.playerGame.has(passport)) return fail('in_game');
     if (!this.isOnline(opp)) return fail('offline');
     if (this.playerGame.has(opp)) return fail('busy');
     // Colours swap: the requester takes the other side.
@@ -524,7 +580,11 @@ export class ChessService {
     return { ok: true };
   }
 
-  async finish(game, result, reason) {
+  /**
+   * Ends a game. Synchronous: the in-memory state and the game:end push happen immediately,
+   * persistence runs in the background so a slow database never stalls moves or the tick loop.
+   */
+  finish(game, result, reason) {
     if (game.status !== 'playing') return;
     game.status = 'ended';
     game.reason = reason;
@@ -537,37 +597,65 @@ export class ChessService {
     }
     this.playerGame.delete(game.white);
     this.playerGame.delete(game.black);
+    // Keep ended games around briefly so rematches and late snapshots work.
+    game.expiresAt = this.now() + 5 * 60 * 1000;
 
+    let rated = false;
     if (reason === 'aborted') {
       game.result = undefined;
     } else {
       game.result = result;
-      await this.applyResult(game, result, reason);
+      try {
+        rated = this.applyResult(game, result, reason);
+      } catch (err) {
+        this.log('failed to apply result', err);
+      }
     }
 
     this.pushGame(game, 'game:end', (p) => ({
       id: game.id,
       result: game.result,
       reason,
+      rated,
       clocks: { ...game.clocks },
-      me: this.publicProfile(this.profiles.get(p)),
+      me: this.publicProfile(this.profiles.get(p) ?? game.profileRefs[this.colorOf(game, p)]),
     }));
-    // Keep ended games around briefly so rematches and late snapshots work.
-    game.expiresAt = this.now() + 5 * 60 * 1000;
   }
 
-  async applyResult(game, result, reason) {
-    const wp = await this.profile(game.white);
-    const bp = await this.profile(game.black);
-    const update = (p, score) => {
-      p.games += 1;
-      if (score === 1) p.wins += 1;
-      else if (score === 0) p.losses += 1;
-      else p.draws += 1;
-    };
+  /** Anti win-trading: short games and repeated games between the same pair don't count. */
+  isRated(game) {
+    if (game.moves.length < (this.cfg.minRatedPlies ?? 0)) return false;
+    const cap = this.cfg.maxRatedGamesPerPairPerHour ?? 0;
+    if (!cap) return true;
+    const key = pairKey(game.white, game.black);
+    const now = this.now();
+    const recent = (this.pairGames.get(key) ?? []).filter((t) => now - t < HOUR);
+    if (recent.length >= cap) {
+      this.pairGames.set(key, recent);
+      return false;
+    }
+    recent.push(now);
+    this.pairGames.set(key, recent);
+    return true;
+  }
+
+  /** Updates cached stats right away and persists in the background. Returns whether the game was rated. */
+  applyResult(game, result, reason) {
+    const rated = this.isRated(game);
     const sw = result === '1-0' ? 1 : result === '0-1' ? 0 : 0.5;
-    update(wp, sw);
-    update(bp, 1 - sw);
+
+    if (rated) {
+      const update = (p, score) => {
+        if (!p) return;
+        p.games += 1;
+        if (score === 1) p.wins += 1;
+        else if (score === 0) p.losses += 1;
+        else p.draws += 1;
+      };
+      update(this.profiles.get(game.white) ?? game.profileRefs.w, sw);
+      update(this.profiles.get(game.black) ?? game.profileRefs.b, 1 - sw);
+      for (const key of this.rankCache.keys()) if (key.endsWith(`:${game.white}`) || key.endsWith(`:${game.black}`)) this.rankCache.delete(key);
+    }
 
     // The live chess.js instance already holds the full history.
     const pgnGame = game.chess;
@@ -577,26 +665,29 @@ export class ChessService {
     pgnGame.setHeader('White', game.players.w.username);
     pgnGame.setHeader('Black', game.players.b.username);
     pgnGame.setHeader('Result', result);
-    pgnGame.setHeader('TimeControl', `${game.tc.base}+${game.tc.inc}`);
+    pgnGame.setHeader('TimeControl', tcKey(game.tc));
     pgnGame.setHeader('Termination', reason);
 
-    try {
-      await this.db.updatePlayer(game.white, wp);
-      await this.db.updatePlayer(game.black, bp);
-      await this.db.insertGame({
-        white: game.white,
-        black: game.black,
-        whiteName: game.players.w.username,
-        blackName: game.players.b.username,
-        result,
-        reason,
-        tc: `${game.tc.base}+${game.tc.inc}`,
-        moves: game.moves.length,
-        pgn: pgnGame.pgn(),
-      });
-    } catch (err) {
-      this.log('failed to persist game', err);
-    }
+    const record = {
+      white: game.white,
+      black: game.black,
+      whiteName: game.players.w.username,
+      blackName: game.players.b.username,
+      result,
+      reason,
+      tc: tcKey(game.tc),
+      moves: game.moves.length,
+      pgn: pgnGame.pgn(),
+    };
+    this.track(
+      this.db.recordGame(record, rated ? { white: sw, black: 1 - sw } : null).catch((err) => {
+        this.log('failed to persist game', err);
+        // Cached stats may now be ahead of the database: reload them on next access.
+        if (!this.playerGame.has(game.white)) this.profiles.delete(game.white);
+        if (!this.playerGame.has(game.black)) this.profiles.delete(game.black);
+      }),
+    );
+    return rated;
   }
 
   async state({ passport, data }) {
@@ -608,17 +699,39 @@ export class ChessService {
 
   // Social ---------------------------------------------------------------------------------
 
+  cacheTtl() {
+    return (this.cfg.leaderboardCacheSeconds ?? 30) * 1000;
+  }
+
+  async leaderboardRows(sort, min) {
+    const hit = this.lbCache.get(sort);
+    if (hit && this.now() - hit.at < this.cacheTtl()) return hit.rows;
+    const rows = await this.db.leaderboard(sort, min, this.cfg.leaderboardSize);
+    this.lbCache.set(sort, { at: this.now(), rows });
+    return rows;
+  }
+
+  async rankOf(p, sort, min) {
+    if (!p) return null;
+    const key = `${sort}:${p.passport}`;
+    const hit = this.rankCache.get(key);
+    if (hit && this.now() - hit.at < this.cacheTtl()) return hit.rank;
+    const rank = await this.db.rankOf(p, sort, min);
+    this.rankCache.set(key, { at: this.now(), rank });
+    return rank;
+  }
+
   async leaderboard({ passport, data }) {
     const sort = ['games', 'winrate', 'wins'].includes(data.sort) ? data.sort : 'games';
     const min = this.cfg.leaderboardMinGames;
-    const rows = await this.db.leaderboard(sort, min, this.cfg.leaderboardSize);
+    const rows = await this.leaderboardRows(sort, min);
     const me = await this.profile(passport);
     return {
       ok: true,
       sort,
       minGames: min,
       rows: rows.map((p, i) => ({ rank: i + 1, ...this.row(p) })),
-      me: me ? { rank: await this.db.rankOf(passport, sort, min), ...this.row(me) } : null,
+      me: me ? { rank: await this.rankOf(me, sort, min), ...this.row(me) } : null,
     };
   }
 
@@ -635,7 +748,14 @@ export class ChessService {
   }
 
   async profileInfo({ passport, data }) {
-    const target = data.username ? await this.db.getPlayerByName(String(data.username)) : await this.profile(passport);
+    let target;
+    if (data.username !== undefined && data.username !== null && data.username !== '') {
+      const username = this.validName(data.username);
+      if (!username) return fail('not_found');
+      target = await this.db.getPlayerByName(username);
+    } else {
+      target = await this.profile(passport);
+    }
     if (!target) return fail('not_found');
     const fresh = this.profiles.get(target.passport) ?? target;
     const games = await this.db.recentGames(target.passport, 15);
@@ -645,7 +765,8 @@ export class ChessService {
       isMe: target.passport === passport,
       online: this.isOnline(target.passport),
       playing: this.playerGame.has(target.passport),
-      rank: await this.db.rankOf(target.passport, 'games', this.cfg.leaderboardMinGames),
+      rank: await this.rankOf(fresh, 'games', this.cfg.leaderboardMinGames),
+      // PGNs are not included; the app fetches one with game:pgn when a game is opened.
       games: games.map((g) => ({
         id: g.id,
         white: g.whiteName,
@@ -654,15 +775,21 @@ export class ChessService {
         reason: g.reason,
         tc: g.tc,
         moves: g.moves,
-        pgn: g.pgn,
         createdAt: g.createdAt,
       })),
     };
   }
 
+  async gamePgn({ data }) {
+    const id = Number(data.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return fail('not_found');
+    const pgn = await this.db.getGamePgn(id);
+    return pgn ? { ok: true, pgn } : fail('not_found');
+  }
+
   async search({ passport, data }) {
     const q = String(data.q ?? '').trim();
-    if (!q || !USERNAME.test(q)) return { ok: true, players: [] };
+    if (!q || q.length > this.cfg.usernameMax || !USERNAME.test(q)) return { ok: true, players: [] };
     const rows = await this.db.searchPlayers(q, 8);
     return {
       ok: true,
@@ -676,44 +803,104 @@ export class ChessService {
 
   onDisconnect(passport) {
     this.removeFromQueues(passport);
-    for (const c of [...this.challenges.values()]) if (c.from === passport || c.to === passport) this.expireChallenge(c, 'cancelled');
+    for (const c of this.challenges.values()) if (c.from === passport || c.to === passport) this.expireChallenge(c, 'cancelled');
     const gameId = this.playerGame.get(passport);
     const game = gameId && this.games.get(gameId);
-    if (!game) return;
+    if (!game) {
+      this.profiles.delete(passport);
+      this.locales.delete(passport);
+      return;
+    }
     const color = this.colorOf(game, passport);
-    const deadline = this.now() + this.cfg.disconnectGraceSeconds * 1000;
+    // Never give a leaver more grace than their own clock (bullet players can't stall for a minute).
+    let grace = this.cfg.disconnectGraceSeconds * 1000;
+    if (game.moves.length >= 2) grace = Math.min(grace, Math.max(this.cfg.minDisconnectGraceSeconds ?? 10, 0) * 1000 + Math.max(0, this.remaining(game, color)));
+    const deadline = this.now() + grace;
     game.disconnect[color] = deadline;
     this.push(color === 'w' ? game.black : game.white, 'game:opponent', { id: game.id, connected: false, deadline });
   }
 
+  /** Drops cached data of players that left without a disconnect event reaching us. */
+  sweep(now) {
+    for (const passport of this.profiles.keys()) {
+      if (this.playerGame.has(passport) || this.isOnline(passport)) continue;
+      this.profiles.delete(passport);
+      this.locales.delete(passport);
+    }
+    for (const passport of this.locales.keys()) if (!this.profiles.has(passport) && !this.isOnline(passport)) this.locales.delete(passport);
+    for (const [key, list] of this.pairGames) {
+      const recent = list.filter((t) => now - t < HOUR);
+      if (recent.length) this.pairGames.set(key, recent);
+      else this.pairGames.delete(key);
+    }
+    for (const [key, v] of this.rankCache) if (now - v.at >= this.cacheTtl()) this.rankCache.delete(key);
+  }
+
+  prune() {
+    const days = this.cfg.gameHistoryDays ?? 0;
+    if (!days || this.pruning || !this.db.pruneGames) return;
+    this.pruning = true;
+    this.track(
+      (async () => {
+        let removed = 0;
+        let n;
+        do {
+          n = await this.db.pruneGames(days, 1000);
+          removed += n;
+        } while (n >= 1000);
+        if (removed) this.log(`pruned ${removed} old games`);
+      })().finally(() => {
+        this.pruning = false;
+      }),
+    );
+  }
+
   async tick() {
     const now = this.now();
-    for (const c of [...this.challenges.values()]) if (c.expiresAt <= now) this.expireChallenge(c, 'expired');
+    // Maps tolerate deleting the current entry while iterating, so no copies are needed.
+    for (const c of this.challenges.values()) if (c.expiresAt <= now) this.expireChallenge(c, 'expired');
 
-    for (const game of [...this.games.values()]) {
-      if (game.status !== 'playing') {
-        if (game.expiresAt && game.expiresAt <= now) this.games.delete(game.id);
-        continue;
+    for (const game of this.games.values()) {
+      try {
+        this.tickGame(game, now);
+      } catch (err) {
+        this.log(`tick failed for game ${game.id}`, err);
       }
-      if (game.firstMoveDeadline && game.firstMoveDeadline <= now) {
-        await this.finish(game, null, 'aborted');
-        continue;
+    }
+
+    if (now - this.lastSweep >= SWEEP_INTERVAL) {
+      this.lastSweep = now;
+      this.sweep(now);
+    }
+    if (now - this.lastPrune >= HOUR) {
+      this.lastPrune = now;
+      this.prune();
+    }
+  }
+
+  tickGame(game, now) {
+    if (game.status !== 'playing') {
+      if (game.expiresAt && game.expiresAt <= now) this.games.delete(game.id);
+      return;
+    }
+    if (game.firstMoveDeadline && game.firstMoveDeadline <= now) {
+      this.finish(game, null, 'aborted');
+      return;
+    }
+    if (game.moves.length >= 2) {
+      const side = game.chess.turn();
+      if (game.clocks[side] - (now - game.turnStartedAt) <= 0) {
+        game.clocks[side] = 0;
+        this.flag(game, side);
+        return;
       }
-      if (game.moves.length >= 2) {
-        const side = game.chess.turn();
-        if (game.clocks[side] - (now - game.turnStartedAt) <= 0) {
-          game.clocks[side] = 0;
-          await this.flag(game, side);
-          continue;
-        }
-      }
-      for (const color of ['w', 'b']) {
-        const d = game.disconnect[color];
-        if (d && d <= now) {
-          if (game.moves.length < 2) await this.finish(game, null, 'aborted');
-          else await this.finish(game, color === 'w' ? '0-1' : '1-0', 'abandoned');
-          break;
-        }
+    }
+    for (const color of ['w', 'b']) {
+      const d = game.disconnect[color];
+      if (d && d <= now) {
+        if (game.moves.length < 2) this.finish(game, null, 'aborted');
+        else this.finish(game, color === 'w' ? '0-1' : '1-0', 'abandoned');
+        return;
       }
     }
   }
@@ -741,6 +928,7 @@ export class ChessService {
       'game:draw': (ctx) => this.draw(ctx),
       'game:rematch': (ctx) => this.rematch(ctx),
       'game:state': (ctx) => this.state(ctx),
+      'game:pgn': (ctx) => this.gamePgn(ctx),
       leaderboard: (ctx) => this.leaderboard(ctx),
       profile: (ctx) => this.profileInfo(ctx),
       search: (ctx) => this.search(ctx),
