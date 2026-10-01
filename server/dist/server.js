@@ -4456,10 +4456,6 @@
     return ((_a = await query(sql, params)) == null ? void 0 : _a[0]) ?? null;
   };
   var SCHEMA = [
-    `CREATE TABLE IF NOT EXISTS chess_meta (
-    k VARCHAR(32) NOT NULL PRIMARY KEY,
-    v INT NOT NULL
-  ) DEFAULT CHARSET=utf8mb4`,
     `CREATE TABLE IF NOT EXISTS chess_players (
     passport INT NOT NULL PRIMARY KEY,
     username VARCHAR(16) NOT NULL,
@@ -4491,52 +4487,6 @@
     KEY idx_chess_created (created_at)
   ) DEFAULT CHARSET=utf8mb4`
   ];
-  var hasColumn = async (table, column) => {
-    var _a;
-    return Number(
-      (_a = await single("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?", [table, column])) == null ? void 0 : _a.n
-    ) > 0;
-  };
-  var hasIndex = async (table, index) => {
-    var _a;
-    return Number(
-      (_a = await single("SELECT COUNT(*) AS n FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?", [table, index])) == null ? void 0 : _a.n
-    ) > 0;
-  };
-  var MIGRATIONS = [
-    // 1: drop the old Elo columns.
-    async () => {
-      const legacy = [
-        ["chess_players", "rating"],
-        ["chess_players", "peak"],
-        ["chess_games", "white_rating"],
-        ["chess_games", "black_rating"],
-        ["chess_games", "white_delta"],
-        ["chess_games", "black_delta"]
-      ];
-      for (const [table, column] of legacy) if (await hasColumn(table, column)) await query(`ALTER TABLE ${table} DROP COLUMN ${column}`);
-    },
-    // 2: indexes that match the leaderboard / history queries, plus an indexable win rate.
-    async () => {
-      if (!await hasColumn("chess_players", "winrate")) {
-        await query("ALTER TABLE chess_players ADD COLUMN winrate DECIMAL(7,6) AS (IF(games > 0, wins / games, 0)) STORED");
-      }
-      const players = [
-        ["idx_chess_games_wins", "(games, wins)"],
-        ["idx_chess_wins_games", "(wins, games)"],
-        ["idx_chess_winrate_games", "(winrate, games)"]
-      ];
-      for (const [name, cols] of players) if (!await hasIndex("chess_players", name)) await query(`ALTER TABLE chess_players ADD KEY ${name} ${cols}`);
-      for (const name of ["idx_chess_games", "idx_chess_wins"]) if (await hasIndex("chess_players", name)) await query(`ALTER TABLE chess_players DROP KEY ${name}`);
-      const games = [
-        ["idx_chess_white_id", "(white, id)"],
-        ["idx_chess_black_id", "(black, id)"],
-        ["idx_chess_created", "(created_at)"]
-      ];
-      for (const [name, cols] of games) if (!await hasIndex("chess_games", name)) await query(`ALTER TABLE chess_games ADD KEY ${name} ${cols}`);
-      for (const name of ["idx_chess_white", "idx_chess_black"]) if (await hasIndex("chess_games", name)) await query(`ALTER TABLE chess_games DROP KEY ${name}`);
-    }
-  ];
   var PLAYER_COLS = "passport, username, games, wins, losses, draws, winrate, UNIX_TIMESTAMP(created_at) * 1000 AS createdAt";
   var GAME_LIST_COLS = "id, white, black, white_name, black_name, result, reason, time_control, moves, created_at";
   var mapPlayer = (r) => r ? { ...r, winrate: Number(r.winrate), createdAt: Number(r.createdAt) } : null;
@@ -4565,13 +4515,7 @@
   function createMysqlDb() {
     return {
       async init() {
-        var _a;
         for (const sql of SCHEMA) await query(sql);
-        const version = Number(((_a = await single("SELECT v FROM chess_meta WHERE k = 'schema'")) == null ? void 0 : _a.v) ?? 0);
-        for (let i = version; i < MIGRATIONS.length; i++) {
-          await MIGRATIONS[i]();
-          await query("INSERT INTO chess_meta (k, v) VALUES ('schema', ?) ON DUPLICATE KEY UPDATE v = VALUES(v)", [i + 1]);
-        }
       },
       getPlayer: async (passport) => mapPlayer(await single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE passport = ?`, [passport])),
       getPlayerByName: async (username) => mapPlayer(await single(`SELECT ${PLAYER_COLS} FROM chess_players WHERE username = ?`, [username])),
