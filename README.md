@@ -34,6 +34,8 @@ Chess app for **LB Phone**: online matchmaking, username challenges, leaderboard
 | `leaderboardMinGames` | `5` | Games needed to appear in the win-rate ranking |
 | `leaderboardSize` | `50` | Number of rows per leaderboard |
 | `maxRequestsPerSecond` | `15` | Per-player request rate limit |
+| `saveGames` | `true` | Store each finished game (moves/PGN) in `chess_games` for profile history and replays. `false` only updates wins/losses/draws in `chess_players`, saving storage |
+| `gameHistoryDays` | `90` | Saved games older than this are deleted (`0` keeps them forever) |
 | `minBaseMinutes` / `maxBaseMinutes` / `maxIncrementSeconds` | `1` / `60` / `60` | Allowed time controls. 20 s and 30 s bullet are also allowed |
 
 ## Architecture

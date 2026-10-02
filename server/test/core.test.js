@@ -117,6 +117,18 @@ test('fool’s mate ends the game, updates stats and stores the PGN', async () =
   assert.equal(svc.playerGame.size, 0);
 });
 
+test('saveGames: false keeps stats but stores no game history', async () => {
+  setup({ ...config, saveGames: false });
+  const g = await startedGame();
+  await play(g, ['f2f3', 'e7e5', 'g2g4', 'd8h4']);
+  const prof = await call('profile', g.black);
+  assert.equal(prof.profile.wins, 1);
+  assert.deepEqual(prof.games, []);
+  assert.deepEqual(await svc.db.recentGames(g.black, 15), []);
+  const lb = await call('leaderboard', 1, { sort: 'games' });
+  assert.equal(lb.rows[0].games, 1);
+});
+
 test('clocks start after both first moves, add increment and flag on timeout', async () => {
   const g = await startedGame({ base: 60, inc: 2 });
   clock += 10_000; // first moves are free

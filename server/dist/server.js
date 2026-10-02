@@ -4181,6 +4181,8 @@
         update(this.profiles.get(game.black) ?? game.profileRefs.b, 1 - sw);
         for (const key of this.rankCache.keys()) if (key.endsWith(`:${game.white}`) || key.endsWith(`:${game.black}`)) this.rankCache.delete(key);
       }
+      const saveGame = this.saveGames();
+      if (!saveGame && !rated) return rated;
       const pgnGame = game.chess;
       pgnGame.setHeader("Event", "LB Chess");
       pgnGame.setHeader("Site", "Los Santos");
@@ -4199,16 +4201,20 @@
         reason,
         tc: tcKey(game.tc),
         moves: game.moves.length,
-        pgn: pgnGame.pgn()
+        pgn: saveGame ? pgnGame.pgn() : ""
       };
       this.track(
-        this.db.recordGame(record, rated ? { white: sw, black: 1 - sw } : null).catch((err) => {
+        this.db.recordGame(record, rated ? { white: sw, black: 1 - sw } : null, saveGame).catch((err) => {
           this.log("failed to persist game", err);
           if (!this.playerGame.has(game.white)) this.profiles.delete(game.white);
           if (!this.playerGame.has(game.black)) this.profiles.delete(game.black);
         })
       );
       return rated;
+    }
+    /** config.saveGames: false keeps only win/loss/draw stats and stores no game history (PGNs). */
+    saveGames() {
+      return this.cfg.saveGames !== false;
     }
     async state({ passport, data }) {
       const game = this.games.get(String(data.id));
@@ -4271,7 +4277,7 @@
       }
       if (!target) return fail("not_found");
       const fresh = this.profiles.get(target.passport) ?? target;
-      const games = await this.db.recentGames(target.passport, 15);
+      const games = this.saveGames() ? await this.db.recentGames(target.passport, 15) : [];
       return {
         ok: true,
         profile: this.publicProfile(fresh),
@@ -4531,8 +4537,9 @@
        * Stores a finished game and, when rated, applies both players' stats atomically.
        * Increments (not absolute values) so concurrent writes can never lose an update.
        * `scores` = { white: 1 | 0.5 | 0, black: ... } or null for unrated games.
+       * With `saveGame` false (config.saveGames) only the stats are written, no chess_games row.
        */
-      async recordGame(g, scores) {
+      async recordGame(g, scores, saveGame = true) {
         const queries = [];
         if (scores) {
           for (const [passport, s] of [
@@ -4545,11 +4552,14 @@
             });
           }
         }
-        queries.push({
-          query: `INSERT INTO chess_games (white, black, white_name, black_name, result, reason, time_control, moves, pgn)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          values: [g.white, g.black, g.whiteName, g.blackName, g.result, g.reason, g.tc, g.moves, g.pgn]
-        });
+        if (saveGame) {
+          queries.push({
+            query: `INSERT INTO chess_games (white, black, white_name, black_name, result, reason, time_control, moves, pgn)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            values: [g.white, g.black, g.whiteName, g.blackName, g.result, g.reason, g.tc, g.moves, g.pgn]
+          });
+        }
+        if (!queries.length) return;
         const ok = await call("transaction", queries);
         if (!ok) throw new Error("recordGame transaction failed");
       },
