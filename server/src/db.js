@@ -108,30 +108,24 @@ export function createMysqlDb() {
     /**
      * Stores a finished game and, when rated, applies both players' stats atomically.
      * Increments (not absolute values) so concurrent writes can never lose an update.
-     * `scores` = { white: 1 | 0.5 | 0, black: ... } or null for unrated games.
-     * With `saveGame` false (config.saveGames) only the stats are written, no chess_games row.
+     * `scores` = [[passport, 1 | 0.5 | 0], ...] or null for unrated games; `g` = null stores no game
+     * (config.saveGames: false). The caller never passes both as null.
      */
-    async recordGame(g, scores, saveGame = true) {
+    async recordGame(g, scores) {
       const queries = [];
-      if (scores) {
-        for (const [passport, s] of [
-          [g.white, scores.white],
-          [g.black, scores.black],
-        ]) {
-          queries.push({
-            query: 'UPDATE chess_players SET games = games + 1, wins = wins + ?, losses = losses + ?, draws = draws + ? WHERE passport = ?',
-            values: [s === 1 ? 1 : 0, s === 0 ? 1 : 0, s === 0.5 ? 1 : 0, passport],
-          });
-        }
+      for (const [passport, s] of scores ?? []) {
+        queries.push({
+          query: 'UPDATE chess_players SET games = games + 1, wins = wins + ?, losses = losses + ?, draws = draws + ? WHERE passport = ?',
+          values: [s === 1 ? 1 : 0, s === 0 ? 1 : 0, s === 0.5 ? 1 : 0, passport],
+        });
       }
-      if (saveGame) {
+      if (g) {
         queries.push({
           query: `INSERT INTO chess_games (white, black, white_name, black_name, result, reason, time_control, moves, pgn)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           values: [g.white, g.black, g.whiteName, g.blackName, g.result, g.reason, g.tc, g.moves, g.pgn],
         });
       }
-      if (!queries.length) return;
       const ok = await call('transaction', queries);
       if (!ok) throw new Error('recordGame transaction failed');
     },

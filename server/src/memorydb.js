@@ -36,21 +36,16 @@ export function createMemoryDb() {
       const p = players.get(passport);
       if (p) Object.assign(p, fields);
     },
-    async recordGame(game, scores, saveGame = true) {
-      if (scores) {
-        for (const [passport, s] of [
-          [game.white, scores.white],
-          [game.black, scores.black],
-        ]) {
-          const p = players.get(passport);
-          if (!p) continue;
-          p.games += 1;
-          if (s === 1) p.wins += 1;
-          else if (s === 0) p.losses += 1;
-          else p.draws += 1;
-        }
+    async recordGame(game, scores) {
+      for (const [passport, s] of scores ?? []) {
+        const p = players.get(passport);
+        if (!p) continue;
+        p.games += 1;
+        if (s === 1) p.wins += 1;
+        else if (s === 0) p.losses += 1;
+        else p.draws += 1;
       }
-      if (saveGame) games.push({ ...game, id: ++gameId, createdAt: Date.now() });
+      if (game) games.push({ ...game, id: ++gameId, createdAt: Date.now() });
     },
     async leaderboard(sort, minGames, limit) {
       return [...players.values()].filter(eligible(sort, minGames)).sort(sorters[sort]).slice(0, limit).map((p) => ({ ...p }));

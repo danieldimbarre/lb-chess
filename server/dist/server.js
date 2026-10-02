@@ -3639,6 +3639,7 @@
       this.isOnline = isOnline ?? (() => true);
       this.now = now;
       this.cfg = config2;
+      this.keepHistory = ![false, 0, "false"].includes(config2.saveGames);
       this.log = log2;
       this.profiles = /* @__PURE__ */ new Map();
       this.locales = /* @__PURE__ */ new Map();
@@ -4181,40 +4182,42 @@
         update(this.profiles.get(game.black) ?? game.profileRefs.b, 1 - sw);
         for (const key of this.rankCache.keys()) if (key.endsWith(`:${game.white}`) || key.endsWith(`:${game.black}`)) this.rankCache.delete(key);
       }
-      const saveGame = this.saveGames();
-      if (!saveGame && !rated) return rated;
-      const pgnGame = game.chess;
-      pgnGame.setHeader("Event", "LB Chess");
-      pgnGame.setHeader("Site", "Los Santos");
-      pgnGame.setHeader("Date", new Date(game.startedAt).toISOString().slice(0, 10).replace(/-/g, "."));
-      pgnGame.setHeader("White", game.players.w.username);
-      pgnGame.setHeader("Black", game.players.b.username);
-      pgnGame.setHeader("Result", result);
-      pgnGame.setHeader("TimeControl", tcKey(game.tc));
-      pgnGame.setHeader("Termination", reason);
-      const record = {
-        white: game.white,
-        black: game.black,
-        whiteName: game.players.w.username,
-        blackName: game.players.b.username,
-        result,
-        reason,
-        tc: tcKey(game.tc),
-        moves: game.moves.length,
-        pgn: saveGame ? pgnGame.pgn() : ""
-      };
+      let record = null;
+      if (this.keepHistory) {
+        const pgnGame = game.chess;
+        pgnGame.setHeader("Event", "LB Chess");
+        pgnGame.setHeader("Site", "Los Santos");
+        pgnGame.setHeader("Date", new Date(game.startedAt).toISOString().slice(0, 10).replace(/-/g, "."));
+        pgnGame.setHeader("White", game.players.w.username);
+        pgnGame.setHeader("Black", game.players.b.username);
+        pgnGame.setHeader("Result", result);
+        pgnGame.setHeader("TimeControl", tcKey(game.tc));
+        pgnGame.setHeader("Termination", reason);
+        record = {
+          white: game.white,
+          black: game.black,
+          whiteName: game.players.w.username,
+          blackName: game.players.b.username,
+          result,
+          reason,
+          tc: tcKey(game.tc),
+          moves: game.moves.length,
+          pgn: pgnGame.pgn()
+        };
+      }
+      const scores = rated ? [
+        [game.white, sw],
+        [game.black, 1 - sw]
+      ] : null;
+      if (!record && !scores) return rated;
       this.track(
-        this.db.recordGame(record, rated ? { white: sw, black: 1 - sw } : null, saveGame).catch((err) => {
+        this.db.recordGame(record, scores).catch((err) => {
           this.log("failed to persist game", err);
           if (!this.playerGame.has(game.white)) this.profiles.delete(game.white);
           if (!this.playerGame.has(game.black)) this.profiles.delete(game.black);
         })
       );
       return rated;
-    }
-    /** config.saveGames: false keeps only win/loss/draw stats and stores no game history (PGNs). */
-    saveGames() {
-      return this.cfg.saveGames !== false;
     }
     async state({ passport, data }) {
       const game = this.games.get(String(data.id));
@@ -4277,9 +4280,10 @@
       }
       if (!target) return fail("not_found");
       const fresh = this.profiles.get(target.passport) ?? target;
-      const games = this.saveGames() ? await this.db.recentGames(target.passport, 15) : [];
+      const games = this.keepHistory ? await this.db.recentGames(target.passport, 15) : [];
       return {
         ok: true,
+        historyEnabled: this.keepHistory,
         profile: this.publicProfile(fresh),
         isMe: target.passport === passport,
         online: this.isOnline(target.passport),
@@ -4299,6 +4303,7 @@
       };
     }
     async gamePgn({ data }) {
+      if (!this.keepHistory) return fail("not_found");
       const id = Number(data.id);
       if (!Number.isSafeInteger(id) || id <= 0) return fail("not_found");
       const pgn = await this.db.getGamePgn(id);
@@ -4536,30 +4541,24 @@
       /**
        * Stores a finished game and, when rated, applies both players' stats atomically.
        * Increments (not absolute values) so concurrent writes can never lose an update.
-       * `scores` = { white: 1 | 0.5 | 0, black: ... } or null for unrated games.
-       * With `saveGame` false (config.saveGames) only the stats are written, no chess_games row.
+       * `scores` = [[passport, 1 | 0.5 | 0], ...] or null for unrated games; `g` = null stores no game
+       * (config.saveGames: false). The caller never passes both as null.
        */
-      async recordGame(g, scores, saveGame = true) {
+      async recordGame(g, scores) {
         const queries = [];
-        if (scores) {
-          for (const [passport, s] of [
-            [g.white, scores.white],
-            [g.black, scores.black]
-          ]) {
-            queries.push({
-              query: "UPDATE chess_players SET games = games + 1, wins = wins + ?, losses = losses + ?, draws = draws + ? WHERE passport = ?",
-              values: [s === 1 ? 1 : 0, s === 0 ? 1 : 0, s === 0.5 ? 1 : 0, passport]
-            });
-          }
+        for (const [passport, s] of scores ?? []) {
+          queries.push({
+            query: "UPDATE chess_players SET games = games + 1, wins = wins + ?, losses = losses + ?, draws = draws + ? WHERE passport = ?",
+            values: [s === 1 ? 1 : 0, s === 0 ? 1 : 0, s === 0.5 ? 1 : 0, passport]
+          });
         }
-        if (saveGame) {
+        if (g) {
           queries.push({
             query: `INSERT INTO chess_games (white, black, white_name, black_name, result, reason, time_control, moves, pgn)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             values: [g.white, g.black, g.whiteName, g.blackName, g.result, g.reason, g.tc, g.moves, g.pgn]
           });
         }
-        if (!queries.length) return;
         const ok = await call("transaction", queries);
         if (!ok) throw new Error("recordGame transaction failed");
       },

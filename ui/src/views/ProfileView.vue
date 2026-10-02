@@ -26,7 +26,7 @@ interface GameRow {
   createdAt: number;
 }
 
-const data = ref<{ profile: Profile; isMe: boolean; online: boolean; playing: boolean; rank: number | null; games: GameRow[] } | null>(null);
+const data = ref<{ profile: Profile; isMe: boolean; online: boolean; playing: boolean; rank: number | null; games: GameRow[]; historyEnabled: boolean } | null>(null);
 const asTab = computed(() => !props.username);
 
 onMounted(async () => {
@@ -137,7 +137,7 @@ async function open(g: GameRow) {
             <Icon name="swords" /> {{ t('profile.challenge') }}
           </button>
 
-          <section class="mt-4">
+          <section v-if="data!.historyEnabled" class="mt-4">
             <div class="pb-2 text-[0.72rem] font-bold uppercase tracking-wider text-muted">{{ t('profile.recent') }}</div>
             <div class="card overflow-hidden">
               <button

@@ -14,13 +14,13 @@ let notes;
 let online;
 let svc;
 
-function setup(cfg = config) {
+function setup(cfg = config, db = createMemoryDb()) {
   clock = 1_000_000;
   pushes = [];
   notes = [];
   online = new Set([1, 2, 3]);
   svc = new ChessService({
-    db: createMemoryDb(),
+    db,
     config: cfg,
     now: () => clock,
     isOnline: (p) => online.has(p),
@@ -124,9 +124,43 @@ test('saveGames: false keeps stats but stores no game history', async () => {
   const prof = await call('profile', g.black);
   assert.equal(prof.profile.wins, 1);
   assert.deepEqual(prof.games, []);
+  assert.equal(prof.historyEnabled, false);
   assert.deepEqual(await svc.db.recentGames(g.black, 15), []);
   const lb = await call('leaderboard', 1, { sort: 'games' });
   assert.equal(lb.rows[0].games, 1);
+});
+
+test('saveGames: false stores nothing for unrated games either', async () => {
+  setup({ ...config, saveGames: false, minRatedPlies: 10 });
+  let writes = 0;
+  const recordGame = svc.db.recordGame;
+  svc.db.recordGame = (...args) => (writes++, recordGame(...args));
+  const g = await startedGame();
+  await play(g, ['f2f3', 'e7e5', 'g2g4', 'd8h4']); // 4 plies: below minRatedPlies, so unrated
+  assert.equal(last(g.white, 'game:end').rated, false);
+  assert.equal(writes, 0);
+  assert.equal((await call('profile', g.black)).profile.games, 0);
+  assert.deepEqual(await svc.db.recentGames(g.black, 15), []);
+});
+
+test('saveGames accepts "false" and 0 as off, anything else keeps history', () => {
+  for (const [value, keep] of [[false, false], ['false', false], [0, false], [true, true], [undefined, true], [null, true]]) {
+    setup({ ...config, saveGames: value });
+    assert.equal(svc.keepHistory, keep, String(value));
+  }
+});
+
+test('saveGames: false hides games saved earlier and stops serving their PGN', async () => {
+  const g = await startedGame();
+  await play(g, ['f2f3', 'e7e5', 'g2g4', 'd8h4']);
+  const id = (await call('profile', g.black)).games[0].id;
+  assert.match((await call('game:pgn', g.black, { id })).pgn, /Qh4#/);
+  setup({ ...config, saveGames: false }, svc.db); // same database, history switched off
+  const prof = await call('profile', g.black);
+  assert.equal(prof.profile.wins, 1);
+  assert.deepEqual(prof.games, []);
+  assert.equal((await call('game:pgn', g.black, { id })).error, 'not_found');
+  assert.equal((await svc.db.recentGames(g.black, 15)).length, 1); // hidden, not deleted
 });
 
 test('clocks start after both first moves, add increment and flag on timeout', async () => {

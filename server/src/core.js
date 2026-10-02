@@ -33,6 +33,8 @@ export class ChessService {
     this.isOnline = isOnline ?? (() => true);
     this.now = now;
     this.cfg = config;
+    /** config.saveGames: false (also "false" / 0) keeps only win/loss/draw stats and stores no game history. */
+    this.keepHistory = ![false, 0, 'false'].includes(config.saveGames);
     this.log = log;
 
     /** @type {Map<number, any>} passport -> profile row (online players only, see sweep()) */
@@ -657,34 +659,42 @@ export class ChessService {
       for (const key of this.rankCache.keys()) if (key.endsWith(`:${game.white}`) || key.endsWith(`:${game.black}`)) this.rankCache.delete(key);
     }
 
-    const saveGame = this.saveGames();
-    // Without game history an unrated game leaves nothing to persist.
-    if (!saveGame && !rated) return rated;
+    // Only built when game history is kept; without it the database just gets the stats.
+    let record = null;
+    if (this.keepHistory) {
+      // The live chess.js instance already holds the full history.
+      const pgnGame = game.chess;
+      pgnGame.setHeader('Event', 'LB Chess');
+      pgnGame.setHeader('Site', 'Los Santos');
+      pgnGame.setHeader('Date', new Date(game.startedAt).toISOString().slice(0, 10).replace(/-/g, '.'));
+      pgnGame.setHeader('White', game.players.w.username);
+      pgnGame.setHeader('Black', game.players.b.username);
+      pgnGame.setHeader('Result', result);
+      pgnGame.setHeader('TimeControl', tcKey(game.tc));
+      pgnGame.setHeader('Termination', reason);
 
-    // The live chess.js instance already holds the full history.
-    const pgnGame = game.chess;
-    pgnGame.setHeader('Event', 'LB Chess');
-    pgnGame.setHeader('Site', 'Los Santos');
-    pgnGame.setHeader('Date', new Date(game.startedAt).toISOString().slice(0, 10).replace(/-/g, '.'));
-    pgnGame.setHeader('White', game.players.w.username);
-    pgnGame.setHeader('Black', game.players.b.username);
-    pgnGame.setHeader('Result', result);
-    pgnGame.setHeader('TimeControl', tcKey(game.tc));
-    pgnGame.setHeader('Termination', reason);
-
-    const record = {
-      white: game.white,
-      black: game.black,
-      whiteName: game.players.w.username,
-      blackName: game.players.b.username,
-      result,
-      reason,
-      tc: tcKey(game.tc),
-      moves: game.moves.length,
-      pgn: saveGame ? pgnGame.pgn() : '',
-    };
+      record = {
+        white: game.white,
+        black: game.black,
+        whiteName: game.players.w.username,
+        blackName: game.players.b.username,
+        result,
+        reason,
+        tc: tcKey(game.tc),
+        moves: game.moves.length,
+        pgn: pgnGame.pgn(),
+      };
+    }
+    const scores = rated
+      ? [
+          [game.white, sw],
+          [game.black, 1 - sw],
+        ]
+      : null;
+    // Unrated and no history kept: nothing to persist.
+    if (!record && !scores) return rated;
     this.track(
-      this.db.recordGame(record, rated ? { white: sw, black: 1 - sw } : null, saveGame).catch((err) => {
+      this.db.recordGame(record, scores).catch((err) => {
         this.log('failed to persist game', err);
         // Cached stats may now be ahead of the database: reload them on next access.
         if (!this.playerGame.has(game.white)) this.profiles.delete(game.white);
@@ -692,11 +702,6 @@ export class ChessService {
       }),
     );
     return rated;
-  }
-
-  /** config.saveGames: false keeps only win/loss/draw stats and stores no game history (PGNs). */
-  saveGames() {
-    return this.cfg.saveGames !== false;
   }
 
   async state({ passport, data }) {
@@ -767,9 +772,10 @@ export class ChessService {
     }
     if (!target) return fail('not_found');
     const fresh = this.profiles.get(target.passport) ?? target;
-    const games = this.saveGames() ? await this.db.recentGames(target.passport, 15) : [];
+    const games = this.keepHistory ? await this.db.recentGames(target.passport, 15) : [];
     return {
       ok: true,
+      historyEnabled: this.keepHistory,
       profile: this.publicProfile(fresh),
       isMe: target.passport === passport,
       online: this.isOnline(target.passport),
@@ -790,6 +796,8 @@ export class ChessService {
   }
 
   async gamePgn({ data }) {
+    // Rows saved before saveGames was turned off stay in the database but are no longer served.
+    if (!this.keepHistory) return fail('not_found');
     const id = Number(data.id);
     if (!Number.isSafeInteger(id) || id <= 0) return fail('not_found');
     const pgn = await this.db.getGamePgn(id);
