@@ -4683,10 +4683,12 @@
     "challenge:send": 500
   };
   var lastCall = /* @__PURE__ */ new Map();
-  function cooledDown(passport, name) {
+  var LEADERBOARD_SORTS = ["games", "winrate", "wins"];
+  function cooledDown(passport, name, data) {
     const ms = COOLDOWNS[name];
     if (!ms) return true;
-    const key = `${passport}:${name}`;
+    const sort = name === "leaderboard" ? LEADERBOARD_SORTS.includes(data == null ? void 0 : data.sort) ? data.sort : "games" : null;
+    const key = sort ? `${passport}:${name}:${sort}` : `${passport}:${name}`;
     const now = Date.now();
     const last = lastCall.get(key) ?? 0;
     if (now - last < ms) return false;
@@ -4695,6 +4697,7 @@
   }
   function forgetCooldowns(passport) {
     for (const name of Object.keys(COOLDOWNS)) lastCall.delete(`${passport}:${name}`);
+    for (const sort of LEADERBOARD_SORTS) lastCall.delete(`${passport}:leaderboard:${sort}`);
   }
   onNet("lb-chess:req", async (id, name, data) => {
     const src = Number(source);
@@ -4708,7 +4711,7 @@
     if (!passport) return reply({ ok: false, error: "no_passport" });
     sources.set(passport, src);
     passports.set(src, passport);
-    if (!cooledDown(passport, name)) return reply({ ok: false, error: "rate_limited" });
+    if (!cooledDown(passport, name, data)) return reply({ ok: false, error: "rate_limited" });
     try {
       reply(await handlers[name]({ src, passport, data: data && typeof data === "object" ? data : {} }));
     } catch (err) {

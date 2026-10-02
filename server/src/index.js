@@ -78,11 +78,14 @@ const COOLDOWNS = {
   register: 1000,
   'challenge:send': 500,
 };
-const lastCall = new Map(); // `${passport}:${name}` -> timestamp
-function cooledDown(passport, name) {
+const lastCall = new Map(); // `${passport}:${name}` (plus `:${sort}` for leaderboard) -> timestamp
+const LEADERBOARD_SORTS = ['games', 'winrate', 'wins'];
+function cooledDown(passport, name, data) {
   const ms = COOLDOWNS[name];
   if (!ms) return true;
-  const key = `${passport}:${name}`;
+  // Each ranking tab is its own request: switching tabs right after opening the screen must not be refused.
+  const sort = name === 'leaderboard' ? (LEADERBOARD_SORTS.includes(data?.sort) ? data.sort : 'games') : null;
+  const key = sort ? `${passport}:${name}:${sort}` : `${passport}:${name}`;
   const now = Date.now();
   const last = lastCall.get(key) ?? 0;
   if (now - last < ms) return false;
@@ -91,6 +94,7 @@ function cooledDown(passport, name) {
 }
 function forgetCooldowns(passport) {
   for (const name of Object.keys(COOLDOWNS)) lastCall.delete(`${passport}:${name}`);
+  for (const sort of LEADERBOARD_SORTS) lastCall.delete(`${passport}:leaderboard:${sort}`);
 }
 
 onNet('lb-chess:req', async (id, name, data) => {
@@ -107,7 +111,7 @@ onNet('lb-chess:req', async (id, name, data) => {
   if (!passport) return reply({ ok: false, error: 'no_passport' });
   sources.set(passport, src);
   passports.set(src, passport);
-  if (!cooledDown(passport, name)) return reply({ ok: false, error: 'rate_limited' });
+  if (!cooledDown(passport, name, data)) return reply({ ok: false, error: 'rate_limited' });
 
   try {
     reply(await handlers[name]({ src, passport, data: data && typeof data === 'object' ? data : {} }));

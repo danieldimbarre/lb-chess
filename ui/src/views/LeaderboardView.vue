@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { t as tr } from '../i18n';
+import { t as tr, te } from '../i18n';
 import { computed, onMounted, ref } from 'vue';
 import Avatar from '../components/Avatar.vue';
 import Icon from '../components/Icon.vue';
@@ -19,15 +19,25 @@ const tabs: { id: Sort; label: string }[] = [
 
 const sort = ref<Sort>('games');
 const cache = ref<Partial<Record<Sort, { rows: Row[]; me: (Row & { rank: number | null }) | null; minGames: number }>>>({});
-const loading = ref(false);
+// Per tab, so a slow reply for one tab neither stops nor duplicates the request for another.
+const pending = ref<Partial<Record<Sort, boolean>>>({});
+const errors = ref<Partial<Record<Sort, string>>>({});
+const loading = computed(() => !!pending.value[sort.value]);
 
 async function load(s: Sort, force = false) {
   sort.value = s;
-  if (cache.value[s] && !force) return;
-  loading.value = true;
-  const res = await request('leaderboard', { sort: s });
-  loading.value = false;
+  if ((cache.value[s] && !force) || pending.value[s]) return;
+  pending.value = { ...pending.value, [s]: true };
+  errors.value = { ...errors.value, [s]: undefined };
+  let res = await request('leaderboard', { sort: s });
+  // The server spaces out ranking requests; wait it out once instead of giving up.
+  if (res?.error === 'rate_limited') {
+    await new Promise((r) => setTimeout(r, 1100));
+    res = await request('leaderboard', { sort: s });
+  }
+  pending.value = { ...pending.value, [s]: false };
   if (res?.ok) cache.value = { ...cache.value, [s]: { rows: res.rows, me: res.me, minGames: res.minGames } };
+  else if (!cache.value[s]) errors.value = { ...errors.value, [s]: te(res?.error) };
 }
 
 onMounted(() => load('games'));
@@ -113,6 +123,10 @@ const medal = (rank: number) => (['#ffc234', '#c9ccd1', '#d08a4f'] as const)[ran
           </span>
         </button>
         <div v-if="!data.rows.length" class="px-4 py-10 text-center text-[0.9rem] text-muted">{{ tr('leaderboard.empty') }}</div>
+      </div>
+      <div v-else-if="errors[sort]" class="flex flex-col items-center gap-4 py-16">
+        <div class="px-8 text-center text-sm text-muted">{{ errors[sort] }}</div>
+        <button class="btn btn-primary h-11 px-8" @click="load(sort, true)">{{ tr('common.retry') }}</button>
       </div>
       <div v-else class="flex justify-center py-16"><span class="size-7 rounded-full border-[3px] border-surface-3 border-t-green [animation:spin_700ms_linear_infinite]" /></div>
     </div>
