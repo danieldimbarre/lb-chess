@@ -32,7 +32,7 @@ const paths: Record<string, string> = {
   check: 'M20 6L9 17l-5-5',
   edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z',
   trash: 'M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6',
-  undo: 'M3 7v6h6M3 13a9 9 0 103-7.7L3 8',
+  undo: 'M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 010 11H11',
   home: 'M3 10l9-7 9 7v10a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z',
   crown: 'M2 7l5 5 5-8 5 8 5-5-2 12H4L2 7z',
   chart: 'M3 3v18h18M7 15l4-4 3 3 5-6',
