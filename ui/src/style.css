@@ -111,6 +111,12 @@ button {
   color: inherit;
 }
 
+/* Players click with the mouse in-game; the focus ring just lingers on the last tapped control. */
+*:focus,
+*:focus-visible {
+  outline: none;
+}
+
 * {
   scrollbar-width: none;
 }
