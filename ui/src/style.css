@@ -71,6 +71,16 @@
   --safe-bottom: 26px;
 }
 
+/*
+ * LB Phone's `fixBlur` sets an inline `font-size: calc((1vh + 1vw) * 1.214)` on this
+ * <html>, so rem already shrinks with the phone. lib/fit.ts scales the whole 390px
+ * canvas too, which shrank every rem-sized element twice on small phones. Pin rem to
+ * the design size and let fit.ts do all of the scaling (!important beats inline style).
+ */
+html {
+  font-size: 16px !important;
+}
+
 html,
 body,
 #app {

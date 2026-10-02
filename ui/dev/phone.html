@@ -60,6 +60,10 @@
       // ?pos=left docks the phone top-left (handy when the preview pane crops the right side).
       if (params.get('pos') === 'left') document.getElementById('phone').classList.add('left');
       frame.src = '/?' + new URLSearchParams({ user: params.get('user') || 'Dimbarre' });
+      // Same as LB Phone's onLoad for apps registered with fixBlur = true.
+      frame.addEventListener('load', () => {
+        frame.contentDocument.documentElement.style.fontSize = 'calc((1vh + 1vw) * 1.214)';
+      });
 
       function layout() {
         const w = innerWidth;
