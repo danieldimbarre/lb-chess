@@ -150,7 +150,7 @@ async function open(g: GameRow) {
                 <span class="min-w-0 flex-1 leading-tight">
                   <span class="flex items-center gap-1.5 truncate text-[0.88rem] font-semibold">
                     <span class="size-2.5 shrink-0 rounded-sm border border-black/30" :class="side(g) === 'w' ? 'bg-white' : 'bg-[#312e2b]'" />
-                    vs {{ side(g) === 'w' ? g.black : g.white }}
+                    <span class="truncate">{{ side(g) === 'w' ? g.white : g.black }} vs {{ side(g) === 'w' ? g.black : g.white }}</span>
                   </span>
                   <span class="block text-[0.74rem] text-muted">{{ tcLabel(parseTc(g.tc)) }} · {{ t('profile.moves', { n: Math.ceil(g.moves / 2) }) }} · {{ t(`reasonShort.${g.reason}`) }} · {{ ago(g.createdAt) }}</span>
                 </span>
