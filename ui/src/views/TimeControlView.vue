@@ -83,7 +83,7 @@ function pick(tc: TimeControl) {
           <button
             v-for="tc in showMore ? [...c.items, ...c.more] : c.items"
             :key="tc.base + '+' + tc.inc"
-            class="tap relative h-12 rounded-lg text-[0.95rem] font-bold transition-colors duration-150"
+            class="tap relative h-12 rounded-lg text-[0.95rem] font-bold"
             :class="sameTc(tc, emitTarget === 'challenge' ? challengeTc : prefs.tc) ? 'bg-surface-3 text-ink ring-2 ring-green' : 'bg-surface text-ink-2'"
             @click="pick(tc)"
           >

@@ -105,10 +105,14 @@ textarea {
   user-select: text;
 }
 
-button {
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
+/* In the base layer: unlayered CSS beats every Tailwind utility, which made each button ignore
+   its text-size, weight and colour classes. */
+@layer base {
+  button {
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+  }
 }
 
 /* Players click with the mouse in-game; the focus ring just lingers on the last tapped control. */
@@ -199,7 +203,10 @@ button {
   }
 
   .tap {
-    transition: transform 140ms var(--ease-out), background-color 150ms ease;
+    transition:
+      transform 140ms var(--ease-out),
+      background-color 150ms ease,
+      color 150ms ease;
   }
   .tap:active {
     transform: scale(0.97);

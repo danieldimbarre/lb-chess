@@ -25,14 +25,14 @@ function go(name: RouteName) {
     <button
       v-for="t in tabs"
       :key="t.name"
-      class="tap flex h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[0.66rem] font-bold transition-colors duration-150"
+      class="tap flex h-14 flex-1 flex-col items-center justify-center gap-1 text-[0.68rem] font-semibold"
       :class="active === t.name ? 'text-ink' : 'text-muted'"
       @click="go(t.name)"
     >
       <span class="relative">
-        <Icon :name="t.icon" :size="22" :stroke="active === t.name ? 2.6 : 2" />
+        <Icon :name="t.icon" :size="26" :stroke="active === t.name ? 2.4 : 1.9" />
         <!-- Someone is waiting for a game: pull the player back to the Play tab. -->
-        <span v-if="t.name === 'home' && active !== 'home' && openSeeks.length" class="absolute -right-1 -top-0.5 size-2.5 rounded-full bg-green ring-2 ring-surface" />
+        <span v-if="t.name === 'home' && active !== 'home' && openSeeks.length" class="absolute -right-0.5 top-0 size-2.5 rounded-full bg-green ring-2 ring-surface" />
       </span>
       {{ tr(t.label) }}
     </button>
