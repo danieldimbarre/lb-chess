@@ -55,6 +55,8 @@ export class ChessService {
     this.rankCache = new Map();
     /** pair key -> timestamps of rated games between those two players */
     this.pairGames = new Map();
+    /** pair keys of players who agreed to chat: later games between them start with chat open (no messages kept) */
+    this.chatPairs = new Set();
     /** in-flight persistence promises (see flush()) */
     this.pending = new Set();
     this.lastSweep = this.now();
@@ -147,6 +149,7 @@ export class ChessService {
       result: game.result,
       reason: game.reason,
       rematch: game.rematch,
+      chat: this.chatView(game),
       disconnectDeadline: game.disconnect[other(this.colorOf(game, passport) ?? 'w')] ?? null,
     };
   }
@@ -475,6 +478,9 @@ export class ChessService {
       result: undefined,
       reason: undefined,
       rematch: null,
+      // Chat state only: messages are relayed to the opponent and never kept here.
+      // Players who already agreed to chat keep talking in their next games without asking again.
+      chat: { status: this.chatPairs.has(pairKey(white, black)) ? 'open' : 'none', by: null, requestedAt: { w: 0, b: 0 }, sentAt: { w: 0, b: 0 } },
       disconnect: { w: null, b: null },
       startedAt: now,
     };
@@ -609,6 +615,109 @@ export class ChessService {
       this.pushGame(game, 'game:draw', () => ({ id: game.id, offer: null, declined: true }));
     }
     return { ok: true };
+  }
+
+  // Chat --------------------------------------------------------------------------------
+  // Opt-in: one player asks, the other accepts. Messages go straight to the opponent's phone
+  // and are never stored or logged; reopening the app shows an empty conversation.
+
+  chatEnabled() {
+    return ![false, 0, 'false'].includes(this.cfg.chat);
+  }
+
+  /** null when chat is turned off, so the app hides the chat button. */
+  chatView(game) {
+    return this.chatEnabled() ? { status: game.chat.status, by: game.chat.by } : null;
+  }
+
+  pushChat(game, extra = {}) {
+    this.pushGame(game, 'game:chat', () => ({ id: game.id, chat: this.chatView(game), ...extra }));
+  }
+
+  openChat(game) {
+    game.chat.status = 'open';
+    game.chat.by = null;
+    this.chatPairs.add(pairKey(game.white, game.black));
+    this.pushChat(game);
+    return { ok: true };
+  }
+
+  async chat({ passport, data }) {
+    if (!this.chatEnabled()) return fail('chat_disabled');
+    // Open during the game and while the finished game lingers (rematch window), so players can say "gg".
+    const game = this.games.get(String(data.id));
+    const color = game && this.colorOf(game, passport);
+    if (!game || !color) return fail('not_found');
+    const chat = game.chat;
+    const theirs = other(color);
+    const now = this.now();
+
+    switch (data.action) {
+      case 'request': {
+        if (chat.status === 'open' || (chat.status === 'requested' && chat.by === color)) return { ok: true };
+        if (chat.status === 'requested') return this.openChat(game);
+        // A declined player can ask again, but not every few seconds.
+        const wait = (this.cfg.chatRequestCooldownSeconds ?? 30) * 1000;
+        if (chat.requestedAt[color] && now - chat.requestedAt[color] < wait) return fail('rate_limited');
+        chat.requestedAt[color] = now;
+        chat.status = 'requested';
+        chat.by = color;
+        this.pushChat(game);
+        return { ok: true };
+      }
+      case 'accept':
+        if (chat.status === 'open') return { ok: true };
+        if (chat.status !== 'requested' || chat.by !== theirs) return fail('no_offer');
+        return this.openChat(game);
+      case 'decline':
+        if (chat.status !== 'requested' || chat.by !== theirs) return { ok: true };
+        chat.status = 'none';
+        chat.by = null;
+        this.pushChat(game, { declined: color });
+        return { ok: true };
+      case 'close':
+        if (chat.status === 'none') return { ok: true };
+        // Closing also withdraws a pending request.
+        if (chat.status === 'requested' && chat.by !== color) return fail('no_offer');
+        chat.status = 'none';
+        chat.by = null;
+        // Ending the chat is final for this pair: the next game needs a new request.
+        this.chatPairs.delete(pairKey(game.white, game.black));
+        this.pushChat(game, { closed: color });
+        return { ok: true };
+      case 'send': {
+        if (chat.status !== 'open') return fail('chat_closed');
+        const text = this.chatText(data.text);
+        if (!text) return fail('invalid_message');
+        if (now - chat.sentAt[color] < 400) return fail('rate_limited');
+        chat.sentAt[color] = now;
+        this.push(color === 'w' ? game.black : game.white, 'chat:message', { id: game.id, from: color, text, at: now });
+        return { ok: true, text, at: now };
+      }
+      default:
+        return fail('bad_request');
+    }
+  }
+
+  /**
+   * Single line, trimmed to the configured length. Empty -> null.
+   * Control characters become spaces; invisible formatting characters (zero-width, bidi
+   * overrides/isolates, BOM) are dropped so a message can't render reversed or hide text.
+   */
+  chatText(value) {
+    if (typeof value !== 'string') return null;
+    const max = this.cfg.chatMaxLength ?? 200;
+    const text = Array.from(
+      value
+        // ZWJ/ZWNJ (\u200c\u200d) stay: emoji sequences and some scripts need them.
+        .replace(/[\u00ad\u061c\u180e\u200b\u200e\u200f\u202a-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/g, '')
+        .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+      .slice(0, max)
+      .join('');
+    return text || null;
   }
 
   async rematch({ passport, data }) {
@@ -874,6 +983,8 @@ export class ChessService {
 
   onDisconnect(passport) {
     this.removeFromQueues(passport);
+    // Chat consent lasts only while both players stay on the server.
+    for (const key of this.chatPairs) if (key.split(':').map(Number).includes(passport)) this.chatPairs.delete(key);
     for (const c of this.challenges.values()) if (c.from === passport || c.to === passport) this.expireChallenge(c, 'cancelled');
     const gameId = this.playerGame.get(passport);
     const game = gameId && this.games.get(gameId);
@@ -901,6 +1012,7 @@ export class ChessService {
       this.lobbyDirty = true;
     }
     for (const passport of this.seekNotified.keys()) if (!this.profiles.has(passport)) this.seekNotified.delete(passport);
+    for (const key of this.chatPairs) if (key.split(':').some((p) => !this.isOnline(Number(p)))) this.chatPairs.delete(key);
     // Seeks of players that vanished without a disconnect event.
     for (const list of this.queues.values()) for (const q of [...list]) if (!this.isOnline(q.passport)) this.removeFromQueues(q.passport);
     for (const passport of this.locales.keys()) if (!this.profiles.has(passport) && !this.isOnline(passport)) this.locales.delete(passport);
@@ -1007,6 +1119,7 @@ export class ChessService {
       'game:abort': (ctx) => this.abort(ctx),
       'game:draw': (ctx) => this.draw(ctx),
       'game:rematch': (ctx) => this.rematch(ctx),
+      'game:chat': (ctx) => this.chat(ctx),
       'game:state': (ctx) => this.state(ctx),
       'game:pgn': (ctx) => this.gamePgn(ctx),
       leaderboard: (ctx) => this.leaderboard(ctx),

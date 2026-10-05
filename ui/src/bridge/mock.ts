@@ -11,6 +11,7 @@ import config from '../../../config.json';
 import { botMove, botById } from '../engine/bots';
 
 const ME = 1;
+const REPLIES = ['Haha nice', 'gg', 'Boa!', 'Watch your queen', 'One more after this?'];
 const SEEK_TCS = [{ base: 180, inc: 2 }, { base: 300, inc: 0 }, { base: 60, inc: 0 }];
 
 const FAKES = [
@@ -95,6 +96,14 @@ export function createMock(push: (action: string, data: unknown) => void) {
       case 'game:end':
         games.delete(data.id);
         break;
+      case 'game:chat':
+        // Simulated players are friendly: they accept chat invites and answer messages.
+        if (data.chat.status === 'requested' && data.chat.by !== games.get(data.id)?.color)
+          setTimeout(() => as(passport, 'game:chat', { id: data.id, action: 'accept' }), 1200);
+        break;
+      case 'chat:message':
+        setTimeout(() => as(passport, 'game:chat', { id: data.id, action: 'send', text: REPLIES[Math.floor(Math.random() * REPLIES.length)] }), 1500);
+        break;
       case 'challenge:incoming':
         setTimeout(() => as(passport, fakeBy(passport).declines ? 'challenge:decline' : 'challenge:accept', { id: data.id }), 1400);
         break;
@@ -116,6 +125,12 @@ export function createMock(push: (action: string, data: unknown) => void) {
     /** Simulated player `i` starts looking for a game, e.g. __mock.seek(2, { base: 60, inc: 0 }). */
     seek: (i = 0, tc = SEEK_TCS[i % SEEK_TCS.length]) => as(FAKES[i].passport, 'queue:join', { tc }),
     unseek: (i = 0) => as(FAKES[i].passport, 'queue:leave'),
+    /** The current opponent asks to chat. */
+    chatMe: () => {
+      const id = service.playerGame.get(ME);
+      const g = id && service.games.get(id);
+      if (g) as(g.white === ME ? g.black : g.white, 'game:chat', { id, action: 'request' });
+    },
     disconnectOpponent: () => {
       const id = service.playerGame.get(ME);
       const g = id && service.games.get(id);

@@ -495,3 +495,105 @@ test('seek notifications can be turned off', async () => {
   assert.equal((await call('queue:join', 1, { tc: { base: 180, inc: 0 } })).notified, 0);
   assert.equal(notes.length, 0);
 });
+
+test('chat opens only after the opponent accepts and relays messages without keeping them', async () => {
+  const g = await startedGame();
+  const chat = (passport, action, extra = {}) => call('game:chat', passport, { id: g.id, action, ...extra });
+
+  assert.equal((await chat(g.white, 'send', { text: 'hi' })).error, 'chat_closed');
+  assert.equal((await chat(g.white, 'request')).ok, true);
+  assert.deepEqual(last(g.black, 'game:chat').chat, { status: 'requested', by: 'w' });
+  // The requester cannot accept their own request.
+  assert.equal((await chat(g.white, 'accept')).error, 'no_offer');
+  assert.equal((await chat(g.black, 'accept')).ok, true);
+  assert.equal(last(g.white, 'game:chat').chat.status, 'open');
+
+  const sent = await chat(g.white, 'send', { text: '  good\nluck\u0000  ' });
+  assert.equal(sent.text, 'good luck');
+  assert.deepEqual(last(g.black, 'chat:message'), { id: g.id, from: 'w', text: 'good luck', at: clock });
+  // Nothing about the text is kept on the game.
+  assert.equal(JSON.stringify(svc.games.get(g.id).chat).includes('good luck'), false);
+
+  assert.equal((await chat(g.white, 'send', { text: 'again' })).error, 'rate_limited');
+  clock += 500;
+  assert.equal((await chat(g.white, 'send', { text: 'x'.repeat(500) })).text.length, config.chatMaxLength);
+  assert.equal((await chat(g.black, 'send', { text: '   ' })).error, 'invalid_message');
+  assert.equal((await call('game:chat', 3, { id: g.id, action: 'send', text: 'spy' })).error, 'not_found');
+
+  assert.equal((await chat(g.black, 'close')).ok, true);
+  assert.equal(last(g.white, 'game:chat').closed, 'b');
+  assert.equal((await chat(g.white, 'send', { text: 'hello?' })).error, 'chat_closed');
+});
+
+test('declined chat requests can be repeated only after the cooldown', async () => {
+  const g = await startedGame();
+  const chat = (passport, action) => call('game:chat', passport, { id: g.id, action });
+  await chat(g.black, 'request');
+  await chat(g.white, 'decline');
+  assert.equal(last(g.black, 'game:chat').declined, 'w');
+  assert.equal(last(g.black, 'game:chat').chat.status, 'none');
+  assert.equal((await chat(g.black, 'request')).error, 'rate_limited');
+  clock += 31_000;
+  assert.equal((await chat(g.black, 'request')).ok, true);
+  // Both asking at once simply opens the chat.
+  assert.equal((await chat(g.white, 'request')).ok, true);
+  assert.equal(last(g.black, 'game:chat').chat.status, 'open');
+  assert.equal((await call('bootstrap', g.white)).game.chat.status, 'open');
+});
+
+test('an accepted chat carries over to the next games of the same pair until someone ends it', async () => {
+  const tc = { base: 300, inc: 2 };
+  const nextGame = async () => {
+    await call('queue:join', 1, { tc });
+    await call('queue:join', 2, { tc });
+    return last(1, 'game:start');
+  };
+  const g = await startedGame(tc);
+  await call('game:chat', g.white, { id: g.id, action: 'request' });
+  await call('game:chat', g.black, { id: g.id, action: 'accept' });
+  await call('game:resign', g.white, { id: g.id });
+
+  // Same two players again: chat is already open, no request needed.
+  const second = await nextGame();
+  assert.deepEqual(second.chat, { status: 'open', by: null });
+  assert.equal((await call('game:chat', 1, { id: second.id, action: 'send', text: 'again!' })).ok, true);
+
+  // A different opponent does not inherit it.
+  await call('game:resign', 1, { id: second.id });
+  await call('queue:join', 1, { tc });
+  await call('queue:join', 3, { tc });
+  const withCarol = last(1, 'game:start');
+  assert.equal(withCarol.chat.status, 'none');
+  await call('game:resign', 1, { id: withCarol.id });
+
+  // Ending the chat means the next game between them starts closed.
+  const third = await nextGame();
+  assert.equal(third.chat.status, 'open');
+  await call('game:chat', 2, { id: third.id, action: 'close' });
+  await call('game:resign', 1, { id: third.id });
+  assert.equal((await nextGame()).chat.status, 'none');
+});
+
+test('chat consent is forgotten when a player leaves the server', async () => {
+  const g = await startedGame();
+  await call('game:chat', g.white, { id: g.id, action: 'request' });
+  await call('game:chat', g.black, { id: g.id, action: 'accept' });
+  assert.equal(svc.chatPairs.size, 1);
+  svc.onDisconnect(g.black);
+  assert.equal(svc.chatPairs.size, 0);
+});
+
+test('chat can be turned off', async () => {
+  setup({ ...config, chat: false });
+  const g = await startedGame();
+  // The app hides the chat button when the snapshot carries no chat state.
+  assert.equal(last(g.white, 'game:start').chat, null);
+  assert.equal((await call('game:chat', g.white, { id: g.id, action: 'request' })).error, 'chat_disabled');
+});
+
+test('chat strips invisible formatting characters but keeps emoji joiners', () => {
+  // Right-to-left override, zero-width space and BOM are dropped; the family emoji keeps its joiner.
+  assert.equal(svc.chatText('gg‮ ez​﻿'), 'gg ez');
+  assert.equal(svc.chatText('\u{1F468}‍\u{1F469}'), '\u{1F468}‍\u{1F469}');
+  assert.equal(svc.chatText('​⁦'), null);
+});

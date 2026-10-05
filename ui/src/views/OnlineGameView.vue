@@ -10,6 +10,8 @@ import GameOverModal from '../components/GameOverModal.vue';
 import Modal from '../components/Modal.vue';
 import Sheet from '../components/Sheet.vue';
 import Icon from '../components/Icon.vue';
+import ChatPanel from '../components/ChatPanel.vue';
+import { chat, resetChat } from '../stores/chat';
 import { createModel } from '../chess/model';
 import { usePremoves } from '../chess/premoves';
 import { materialInfo } from '../chess/util';
@@ -20,7 +22,7 @@ import { joinQueue } from '../stores/online';
 import { push, reset } from '../stores/router';
 import { settings } from '../stores/settings';
 import { tcLabel, tcCategory } from '../lib/timeControls';
-import { showError } from '../lib/toast';
+import { showError, toast } from '../lib/toast';
 import type { Color, GameSnapshot } from '../types';
 
 const initial = session.game;
@@ -188,7 +190,11 @@ watch(playing, (p, was) => {
 if (!playing.value) showResult.value = true;
 
 function leave() {
-  if (!playing.value) session.game = null;
+  if (!playing.value) {
+    session.game = null;
+    // An open chat survives leaving: the next game against this player picks the conversation up.
+    if (chatState.value.status !== 'open') resetChat();
+  }
   reset('home', {}, 'back');
 }
 
@@ -211,6 +217,32 @@ function review() {
     white: snap.white.username,
     black: snap.black.username,
   });
+}
+
+// Chat ---------------------------------------------------------------------------------------
+
+const chatState = computed(() => game.value?.chat ?? { status: 'none' as const, by: null });
+const chatAskedByThem = computed(() => chatState.value.status === 'requested' && chatState.value.by === them);
+const chatAskedByMe = computed(() => chatState.value.status === 'requested' && chatState.value.by === me);
+
+watch(
+  () => chat.visible,
+  (v) => {
+    if (v) chat.unread = 0;
+  },
+);
+
+async function chatButton() {
+  if (chatState.value.status === 'open') return (chat.visible = true);
+  if (chatAskedByThem.value) return acceptChat();
+  if (chatAskedByMe.value) return toast(t('chat.waiting', { name: oppInfo.value.username }));
+  const res = await act('game:chat', { action: 'request' });
+  if (res?.ok) toast(t('chat.inviteSent'));
+}
+
+async function acceptChat() {
+  const res = await act('game:chat', { action: 'accept' });
+  if (res?.ok) chat.visible = true;
 }
 
 // View --------------------------------------------------------------------------------------
@@ -253,6 +285,20 @@ const rematchState = computed(() => {
         <Icon :name="cat.icon" :size="18" :style="{ color: cat.color }" />
         {{ tcLabel(snap.tc) }} <span class="text-[0.8rem] font-bold text-muted">· {{ t('game.online') }}</span>
       </div>
+      <button
+        v-if="game?.chat"
+        class="tap relative flex size-10 items-center justify-center rounded-full"
+        :class="chatState.status === 'open' ? 'text-green' : chatAskedByMe ? 'text-gold' : 'text-ink-2'"
+        :aria-label="chatState.status === 'open' ? t('chat.title') : t('chat.invite')"
+        @click="chatButton"
+      >
+        <Icon name="chat" :size="22" />
+        <span
+          v-if="chat.unread || chatAskedByThem"
+          class="absolute right-0.5 top-0.5 flex h-[1.1rem] min-w-[1.1rem] items-center justify-center rounded-full bg-red px-1 text-[0.62rem] font-extrabold text-white ring-2 ring-bg"
+          >{{ chat.unread || '!' }}</span
+        >
+      </button>
       <button class="tap flex size-10 items-center justify-center rounded-full text-ink-2" :aria-label="t('common.gameMenu')" @click="menu = true">
         <Icon name="dots" :size="26" :stroke="3.4" />
       </button>
@@ -292,6 +338,19 @@ const rematchState = computed(() => {
             <span class="flex-1 text-[0.9rem] font-bold">{{ t('game.offersDraw', { name: oppInfo.username }) }}</span>
             <button class="btn btn-secondary h-9 px-3 text-sm" @click="act('game:draw', { action: 'decline' })">{{ t('common.decline') }}</button>
             <button class="btn btn-primary h-9 px-3 text-sm" @click="act('game:draw', { action: 'accept' })">{{ t('common.accept') }}</button>
+          </div>
+        </Transition>
+        <Transition name="drop">
+          <!-- Over the opponent's side of the board (like the draw offer), never over the player's own pieces. -->
+          <div
+            v-if="chatAskedByThem"
+            class="absolute inset-x-3 z-50 flex items-center gap-2 rounded-xl bg-surface-2 p-2.5 pl-3.5 shadow-[0_10px_30px_rgba(0,0,0,.45)]"
+            :class="drawOfferedByThem && playing ? 'top-[4.25rem]' : 'top-3'"
+          >
+            <Icon name="chat" :size="20" class="shrink-0 text-green" />
+            <span class="line-clamp-2 min-w-0 flex-1 text-[0.88rem] font-bold leading-tight">{{ t('chat.wants', { name: oppInfo.username }) }}</span>
+            <button class="btn btn-secondary h-9 px-3 text-sm" @click="act('game:chat', { action: 'decline' })">{{ t('common.decline') }}</button>
+            <button class="btn btn-primary h-9 px-3 text-sm" @click="acceptChat">{{ t('common.accept') }}</button>
           </div>
         </Transition>
       </div>
@@ -347,6 +406,10 @@ const rematchState = computed(() => {
         <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; push('settings')"><Icon name="settings" />{{ t('common.boardSettings') }}</button>
         <button class="hover-row flex items-center gap-3 rounded-lg px-3 py-3 text-left font-semibold" @click="menu = false; leave()"><Icon name="home" />{{ playing ? t('game.homeContinues') : t('game.home') }}</button>
       </div>
+    </Sheet>
+
+    <Sheet :open="chat.visible && chatState.status === 'open'" @close="chat.visible = false">
+      <ChatPanel :game-id="gid" :me="me" :opponent="oppInfo.username" />
     </Sheet>
 
     <Modal :open="!!confirm" @close="confirm = null">

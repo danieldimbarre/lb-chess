@@ -1,11 +1,12 @@
 import { onPush, request } from '../bridge/nui';
 import { session } from './session';
+import { chat, chatForGame, nextUid } from './chat';
 import { current, reset } from './router';
 import { playSound } from '../chess/sounds';
 import { toast, showError } from '../lib/toast';
 import { watch } from 'vue';
 import { locale, t } from '../i18n';
-import type { Bootstrap, Challenge, GameSnapshot, Lobby, MoveRecord, Profile, Seek, TimeControl } from '../types';
+import type { Bootstrap, ChatState, Challenge, Color, GameSnapshot, Lobby, MoveRecord, Profile, Seek, TimeControl } from '../types';
 
 let installed = false;
 
@@ -18,6 +19,7 @@ export function applyBootstrap(b: Bootstrap) {
   syncTime(b.serverTime);
   session.me = b.me;
   session.game = b.game;
+  chatForGame(b.game);
   session.queue = b.queue;
   session.incoming = b.challenges.incoming;
   session.outgoing = b.challenges.outgoing;
@@ -45,6 +47,8 @@ export function installPushHandlers() {
     session.queue = null;
     session.outgoing = [];
     session.incoming = [];
+    chatForGame(snap);
+    if (snap.chat?.status === 'open') toast(t('chat.continues', { name: snap.myColor === 'w' ? snap.black.username : snap.white.username }));
     playSound('start');
     reset('online', {}, 'forward');
   });
@@ -93,6 +97,28 @@ export function installPushHandlers() {
   onPush('game:rematch', (d: { id: string; rematch: GameSnapshot['rematch'] }) => {
     const g = session.game;
     if (g && g.id === d.id) g.rematch = d.rematch;
+  });
+
+  onPush('game:chat', (d: { id: string; chat: ChatState; declined?: Color; closed?: Color }) => {
+    const g = session.game;
+    if (!g || g.id !== d.id || !d.chat) return;
+    const askedByMe = g.chat?.status === 'requested' && g.chat.by === g.myColor;
+    g.chat = d.chat;
+    const name = g.myColor === 'w' ? g.black.username : g.white.username;
+    if (askedByMe && d.chat.status === 'open') toast(t('chat.accepted', { name }));
+    if (d.chat.status === 'requested' && d.chat.by !== g.myColor) playSound('notify');
+    if (d.declined && d.declined !== g.myColor) toast(t('chat.declined', { name }));
+    if (d.closed && d.closed !== g.myColor) toast(t('chat.closedBy', { name }));
+    if (d.chat.status !== 'open') chat.visible = false;
+  });
+
+  onPush('chat:message', (d: { id: string; from: Color; text: string; at: number }) => {
+    if (session.game?.id !== d.id) return;
+    chat.messages.push({ uid: nextUid(), from: d.from, text: d.text, at: d.at });
+    if (!chat.visible) {
+      chat.unread++;
+      playSound('notify');
+    }
   });
 
   onPush('queue:status', (d: { queue: { tc: TimeControl; since: number } | null }) => {

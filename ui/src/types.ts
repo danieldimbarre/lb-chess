@@ -60,6 +60,9 @@ export interface GameSnapshot {
   result?: GameResult;
   reason?: EndReason;
   rematch?: { by: Color; challengeId: string } | null;
+  /** Opt-in chat between the two players (state only; messages are never stored). */
+  /** null when the server has chat turned off. */
+  chat?: ChatState | null;
   disconnectDeadline?: number | null;
 }
 
@@ -93,6 +96,23 @@ export interface HistoryGame {
   tc: string;
   moves: number;
   createdAt: number;
+}
+
+export interface ChatState {
+  status: 'none' | 'requested' | 'open';
+  by: Color | null;
+}
+
+export interface ChatMessage {
+  /** Local id: stays the same when the server confirms a sent message. */
+  uid: number;
+  from: Color;
+  text: string;
+  at: number;
+  /** Shown right away, before the server confirms it. */
+  pending?: boolean;
+  /** Local divider, not a message (e.g. where a rematch started). */
+  system?: 'newGame';
 }
 
 /** Someone waiting in the matchmaking queue, as everyone else sees it. */
