@@ -5,7 +5,7 @@ import { playSound } from '../chess/sounds';
 import { toast, showError } from '../lib/toast';
 import { watch } from 'vue';
 import { locale, t } from '../i18n';
-import type { Bootstrap, Challenge, GameSnapshot, MoveRecord, Profile, TimeControl } from '../types';
+import type { Bootstrap, Challenge, GameSnapshot, Lobby, MoveRecord, Profile, Seek, TimeControl } from '../types';
 
 let installed = false;
 
@@ -21,6 +21,7 @@ export function applyBootstrap(b: Bootstrap) {
   session.queue = b.queue;
   session.incoming = b.challenges.incoming;
   session.outgoing = b.challenges.outgoing;
+  if (b.lobby) session.lobby = b.lobby;
   session.ready = true;
 }
 
@@ -98,6 +99,13 @@ export function installPushHandlers() {
     session.queue = d.queue;
   });
 
+  onPush('lobby', (d: Lobby) => {
+    const seen = new Set(session.lobby.seeks.map(seekId));
+    session.lobby = d;
+    // While waiting, a new player showing up in another time control is worth a sound.
+    if (session.queue && d.seeks.some((s) => s.username !== session.me?.username && !seen.has(seekId(s)))) playSound('notify');
+  });
+
   onPush('challenge:incoming', (c: Challenge) => {
     syncTime(c.serverTime);
     session.incoming = [...session.incoming.filter((x) => x.id !== c.id), c];
@@ -117,6 +125,8 @@ export function installPushHandlers() {
   });
 }
 
+const seekId = (s: Seek) => `${s.username}:${s.tc.base}+${s.tc.inc}`;
+
 // Actions ---------------------------------------------------------------------------------
 
 export async function joinQueue(tc: TimeControl) {
@@ -124,6 +134,7 @@ export async function joinQueue(tc: TimeControl) {
   if (!res?.ok) return showError(res?.error);
   if (!res.matched) {
     session.queue = res.queue;
+    session.notified = res.notified ?? 0;
     if (current().name !== 'searching') reset('searching', {}, 'forward');
   }
 }

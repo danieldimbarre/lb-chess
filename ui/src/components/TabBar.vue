@@ -3,6 +3,7 @@ import Icon from './Icon.vue';
 import { t as tr } from '../i18n';
 import { current, reset, type RouteName } from '../stores/router';
 import { computed } from 'vue';
+import { openSeeks } from '../stores/session';
 
 const tabs: { name: RouteName; label: string; icon: string }[] = [
   { name: 'home', label: 'tabs.play', icon: 'home' },
@@ -28,7 +29,11 @@ function go(name: RouteName) {
       :class="active === t.name ? 'text-ink' : 'text-muted'"
       @click="go(t.name)"
     >
-      <Icon :name="t.icon" :size="22" :stroke="active === t.name ? 2.6 : 2" />
+      <span class="relative">
+        <Icon :name="t.icon" :size="22" :stroke="active === t.name ? 2.6 : 2" />
+        <!-- Someone is waiting for a game: pull the player back to the Play tab. -->
+        <span v-if="t.name === 'home' && active !== 'home' && openSeeks.length" class="absolute -right-1 -top-0.5 size-2.5 rounded-full bg-green ring-2 ring-surface" />
+      </span>
       {{ tr(t.label) }}
     </button>
   </nav>

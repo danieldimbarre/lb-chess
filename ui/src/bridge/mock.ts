@@ -11,6 +11,7 @@ import config from '../../../config.json';
 import { botMove, botById } from '../engine/bots';
 
 const ME = 1;
+const SEEK_TCS = [{ base: 180, inc: 2 }, { base: 300, inc: 0 }, { base: 60, inc: 0 }];
 
 const FAKES = [
   { passport: 101, username: 'Hikaru_LS', games: 184, wins: 112, losses: 58, draws: 14, bot: 'amara' },
@@ -47,6 +48,9 @@ export function createMock(push: (action: string, data: unknown) => void) {
       await db.updatePlayer(f.passport, { games: f.games, wins: f.wins, losses: f.losses, draws: f.draws });
     }
     if (params.get('user')) await as(ME, 'register', { username: params.get('user') });
+    // ?seeks=2 starts the lobby with simulated players already waiting.
+    const seeks = Number(params.get('seeks') ?? 0);
+    for (let i = 0; i < seeks; i++) await as(FAKES[i].passport, 'queue:join', { tc: SEEK_TCS[i % SEEK_TCS.length] });
   })();
 
   setInterval(() => service.tick(), 250);
@@ -109,6 +113,9 @@ export function createMock(push: (action: string, data: unknown) => void) {
   (window as any).__mock = {
     service,
     challengeMe: async (i = 0, tc = { base: 300, inc: 0 }) => as(FAKES[i].passport, 'challenge:send', { username: service.profiles.get(ME)?.username, tc, color: 'random' }),
+    /** Simulated player `i` starts looking for a game, e.g. __mock.seek(2, { base: 60, inc: 0 }). */
+    seek: (i = 0, tc = SEEK_TCS[i % SEEK_TCS.length]) => as(FAKES[i].passport, 'queue:join', { tc }),
+    unseek: (i = 0) => as(FAKES[i].passport, 'queue:leave'),
     disconnectOpponent: () => {
       const id = service.playerGame.get(ME);
       const g = id && service.games.get(id);

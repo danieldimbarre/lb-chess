@@ -3,8 +3,9 @@ import { t } from '../i18n';
 import { computed, ref } from 'vue';
 import TopBar from '../components/TopBar.vue';
 import Icon from '../components/Icon.vue';
-import { TC_CATEGORIES, prefs, tcLabel, sameTc, tcCategory, challengeTc } from '../lib/timeControls';
+import { TC_CATEGORIES, prefs, tcLabel, sameTc, tcCategory, challengeTc, tcKey } from '../lib/timeControls';
 import { back } from '../stores/router';
+import { openSeeks, waitingIn } from '../stores/session';
 import type { TimeControl } from '../types';
 
 const props = defineProps<{ /** Where to store the pick: online prefs (default) or a callback key. */ target?: 'online' | 'challenge' }>();
@@ -25,6 +26,15 @@ const incIdx = computed({
   set: (i: number) => (custom.value = { ...custom.value, inc: INCS[i] }),
 });
 
+// Quick pairing only: time controls someone is waiting in right now, so picking one means an instant game.
+const live = computed(() => {
+  if (emitTarget !== 'online') return [];
+  const seen = new Map<string, TimeControl>();
+  for (const s of openSeeks.value) seen.set(tcKey(s.tc), s.tc);
+  return [...seen.values()].map((tc) => ({ tc, n: waitingIn(tc) }));
+});
+const waiting = (tc: TimeControl) => (emitTarget === 'online' ? waitingIn(tc) : 0);
+
 function pick(tc: TimeControl) {
   if (emitTarget === 'challenge') challengeTc.value = tc;
   else prefs.tc = tc;
@@ -36,6 +46,27 @@ function pick(tc: TimeControl) {
   <div class="flex h-full flex-col bg-bg pt-(--safe-top)">
     <TopBar :title="t('tc.title')" />
     <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-[calc(var(--safe-bottom)+16px)]">
+      <section v-if="live.length" class="card mb-4 p-3 ring-1 ring-green/45">
+        <div class="flex items-center gap-2">
+          <span class="rounded-md bg-green px-1.5 py-0.5 text-[0.64rem] font-extrabold uppercase tracking-wider text-white">{{ t('lobby.live') }}</span>
+          <span class="font-display text-[0.95rem] font-extrabold">{{ t('lobby.tcWaiting') }}</span>
+        </div>
+        <div class="mt-0.5 text-[0.8rem] text-muted">{{ t('lobby.tcHint') }}</div>
+        <div class="mt-2.5 grid grid-cols-3 gap-2">
+          <button
+            v-for="l in live"
+            :key="tcKey(l.tc)"
+            class="tap flex h-14 flex-col items-center justify-center rounded-lg bg-green/15 leading-tight ring-1 ring-green/40"
+            @click="pick(l.tc)"
+          >
+            <span class="flex items-center gap-1 text-[0.95rem] font-bold">
+              <Icon :name="tcCategory(l.tc).icon" :size="14" :style="{ color: tcCategory(l.tc).color }" />{{ tcLabel(l.tc) }}
+            </span>
+            <span class="text-[0.7rem] font-bold text-green">{{ t('lobby.waitingHere', { n: l.n }) }}</span>
+          </button>
+        </div>
+      </section>
+
       <section v-for="c in TC_CATEGORIES" :key="c.id" class="pb-4">
         <div class="flex items-center gap-2 pb-2 pt-1">
           <Icon :name="c.icon" :size="20" :style="{ color: c.color }" />
@@ -45,11 +76,17 @@ function pick(tc: TimeControl) {
           <button
             v-for="tc in showMore ? [...c.items, ...c.more] : c.items"
             :key="tc.base + '+' + tc.inc"
-            class="tap h-12 rounded-lg text-[0.95rem] font-bold transition-colors duration-150"
+            class="tap relative h-12 rounded-lg text-[0.95rem] font-bold transition-colors duration-150"
             :class="sameTc(tc, emitTarget === 'challenge' ? challengeTc : prefs.tc) ? 'bg-surface-3 text-ink ring-2 ring-green' : 'bg-surface text-ink-2'"
             @click="pick(tc)"
           >
             {{ tcLabel(tc) }}
+            <span
+              v-if="waiting(tc)"
+              class="absolute -right-1 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-green px-1 text-[0.68rem] font-extrabold text-white ring-2 ring-bg"
+              :aria-label="t('lobby.waitingHere', { n: waiting(tc) })"
+              >{{ waiting(tc) }}</span
+            >
           </button>
         </div>
       </section>

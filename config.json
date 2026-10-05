@@ -25,6 +25,9 @@
   "leaderboardCacheSeconds": 30,
   "maxRequestsPerSecond": 15,
 
+  "seekNotifications": true,
+  "seekNotifyCooldownSeconds": 300,
+
   "minRatedPlies": 10,
   "maxRatedGamesPerPairPerHour": 3,
   "saveGames": true,

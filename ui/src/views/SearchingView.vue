@@ -5,10 +5,12 @@ import Board from '../components/Board.vue';
 import PlayerBar from '../components/PlayerBar.vue';
 import Icon from '../components/Icon.vue';
 import BoardStage from '../components/BoardStage.vue';
-import { session, serverNow } from '../stores/session';
-import { leaveQueue } from '../stores/online';
+import SeekRow from '../components/SeekRow.vue';
+import { openSeeks, session, serverNow } from '../stores/session';
+import { joinQueue, leaveQueue } from '../stores/online';
 import { reset } from '../stores/router';
-import { tcLabel, tcCategory } from '../lib/timeControls';
+import { tcLabel, tcCategory, sameTc } from '../lib/timeControls';
+import type { TimeControl } from '../types';
 import { START_FEN } from '../chess/util';
 
 const now = ref(serverNow());
@@ -35,6 +37,19 @@ async function cancel() {
 }
 
 const cat = computed(() => (session.queue ? tcCategory(session.queue.tc) : null));
+
+// Players waiting in a different time control: switching to theirs starts the game right away.
+const others = computed(() => openSeeks.value.filter((s) => !sameTc(s.tc, session.queue?.tc)));
+const switching = ref(false);
+async function switchTo(tc: TimeControl) {
+  if (switching.value) return;
+  switching.value = true;
+  try {
+    await joinQueue(tc);
+  } finally {
+    switching.value = false;
+  }
+}
 </script>
 
 <template>
@@ -81,6 +96,17 @@ const cat = computed(() => (session.queue ? tcCategory(session.queue.tc) : null)
       <PlayerBar :name="session.me?.username ?? t('common.you')" color="w" :captured="[]" :diff="0" :clock="session.queue ? session.queue.tc.base * 1000 : null" />
       </template>
     </BoardStage>
+
+    <div class="px-4 pt-2">
+      <div v-if="others.length" class="card overflow-hidden ring-1 ring-green/45">
+        <div class="px-3 pt-2.5 text-[0.78rem] font-bold text-muted">{{ t('lobby.also') }}</div>
+        <SeekRow v-for="s in others.slice(0, 2)" :key="s.username + s.tc.base + '+' + s.tc.inc" :seek="s" :action="t('lobby.switch')" :busy="switching" @take="switchTo(s.tc)" />
+      </div>
+      <div v-else class="flex items-center justify-center gap-2 px-2 text-center text-[0.8rem] font-semibold text-muted">
+        <Icon name="bell" :size="16" class="shrink-0" />
+        <span>{{ session.notified ? t('lobby.notified', { n: session.notified }) : t('lobby.nobody') }}</span>
+      </div>
+    </div>
 
     <div class="px-4 pb-3 pt-2">
       <button class="btn btn-secondary h-12 w-full text-lg" @click="cancel">{{ t('common.cancel') }}</button>

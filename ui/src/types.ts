@@ -95,12 +95,26 @@ export interface HistoryGame {
   createdAt: number;
 }
 
+/** Someone waiting in the matchmaking queue, as everyone else sees it. */
+export interface Seek {
+  username: string;
+  tc: TimeControl;
+  since: number;
+}
+
+export interface Lobby {
+  seeks: Seek[];
+  /** Online players who opened the app this session (including you). */
+  players: number;
+}
+
 export interface Bootstrap {
   ok: boolean;
   me: Profile | null;
   game: GameSnapshot | null;
   queue: { tc: TimeControl; since: number } | null;
   challenges: { incoming: Challenge[]; outgoing: Challenge[] };
+  lobby: Lobby;
   serverTime: number;
 }
 

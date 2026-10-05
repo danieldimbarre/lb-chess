@@ -1,17 +1,32 @@
 <script setup lang="ts">
 import { t } from '../i18n';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import Avatar from '../components/Avatar.vue';
 import Icon from '../components/Icon.vue';
+import SeekRow from '../components/SeekRow.vue';
 import TabBar from '../components/TabBar.vue';
-import { session } from '../stores/session';
+import { openSeeks, session, waitingIn } from '../stores/session';
 import { push, reset } from '../stores/router';
 import { joinQueue } from '../stores/online';
 import { prefs, tcLabel, tcCategory } from '../lib/timeControls';
+import type { TimeControl } from '../types';
 
 const me = computed(() => session.me);
 const winRate = computed(() => (me.value?.games ? Math.round((me.value.wins / me.value.games) * 100) : 0));
 const cat = computed(() => tcCategory(prefs.tc));
+const waitingHere = computed(() => waitingIn(prefs.tc));
+
+// Taking a seek is joining its time control: the server pairs instantly with whoever waits there.
+const taking = ref(false);
+async function take(tc: TimeControl) {
+  if (taking.value) return;
+  taking.value = true;
+  try {
+    await joinQueue(tc);
+  } finally {
+    taking.value = false;
+  }
+}
 
 const rows = [
   { route: 'challenge', icon: 'swords', title: 'home.friend', sub: 'home.friendHint', tint: '#5d9fd8' },
@@ -32,7 +47,7 @@ const rows = [
       </button>
       <div class="flex items-center gap-1 rounded-full bg-surface px-3 py-1.5 text-[0.78rem] font-bold">
         <span class="size-2 rounded-full bg-green shadow-[0_0_0_3px_rgba(129,182,76,.25)]" />
-        {{ t('common.online') }}
+        {{ session.lobby.players > 1 ? t('lobby.players', { n: session.lobby.players }) : t('common.online') }}
       </div>
     </header>
 
@@ -51,6 +66,25 @@ const rows = [
           <Icon name="next" class="text-gold" />
         </button>
 
+        <!-- Players waiting right now: one tap starts the game -->
+        <section v-if="openSeeks.length" class="card overflow-hidden ring-1 ring-green/45">
+          <div class="flex items-center gap-2 px-3 pb-0.5 pt-3">
+            <span class="rounded-md bg-green px-1.5 py-0.5 text-[0.64rem] font-extrabold uppercase tracking-wider text-white">{{ t('lobby.live') }}</span>
+            <span class="truncate font-display text-[0.95rem] font-extrabold">{{ t('lobby.title') }}</span>
+          </div>
+          <TransitionGroup tag="div" name="seek" class="relative divide-y divide-line">
+            <SeekRow
+              v-for="s in openSeeks.slice(0, 3)"
+              :key="s.username + s.tc.base + '+' + s.tc.inc"
+              :seek="s"
+              :action="t('lobby.play')"
+              :busy="taking"
+              @take="take(s.tc)"
+            />
+          </TransitionGroup>
+          <div v-if="openSeeks.length > 3" class="px-3 pb-2.5 text-[0.78rem] font-semibold text-muted">{{ t('lobby.more', { n: openSeeks.length - 3 }) }}</div>
+        </section>
+
         <!-- Play online hero -->
         <section class="card relative overflow-hidden p-4">
           <div class="pointer-events-none absolute -right-8 -top-10 size-40 rounded-full bg-green/10" />
@@ -61,7 +95,8 @@ const rows = [
           <button class="tap relative mt-3 flex w-full items-center gap-3 rounded-xl bg-surface-2 px-3 py-3 text-left" @click="push('timeControl')">
             <Icon :name="cat.icon" :style="{ color: cat.color }" :size="22" />
             <span class="flex-1 font-display text-[1.05rem] font-extrabold">{{ tcLabel(prefs.tc) }}</span>
-            <span class="text-[0.8rem] font-semibold text-muted">{{ cat.label }}</span>
+            <span v-if="waitingHere" class="rounded-full bg-green/20 px-2 py-0.5 text-[0.75rem] font-bold text-green">{{ t('lobby.waitingHere', { n: waitingHere }) }}</span>
+            <span v-else class="text-[0.8rem] font-semibold text-muted">{{ cat.label }}</span>
             <Icon name="next" :size="18" class="text-muted" />
           </button>
           <button class="btn btn-primary relative mt-4 h-[3.6rem] w-full text-[1.35rem]" @click="joinQueue(prefs.tc)">
@@ -107,3 +142,29 @@ const rows = [
     <TabBar />
   </div>
 </template>
+
+<style scoped>
+.seek-enter-active,
+.seek-leave-active {
+  transition:
+    opacity 220ms var(--ease-out),
+    transform 220ms var(--ease-out);
+}
+.seek-enter-from {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+.seek-leave-to {
+  opacity: 0;
+}
+.seek-leave-active {
+  position: absolute;
+  inset-inline: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .seek-enter-active,
+  .seek-leave-active {
+    transition: none;
+  }
+}
+</style>

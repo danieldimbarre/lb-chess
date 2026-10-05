@@ -60,6 +60,10 @@ export class ChessService {
     this.lastSweep = this.now();
     this.lastPrune = 0;
     this.pruning = false;
+    /** set when the queues change; the next tick() sends the lobby to every app user */
+    this.lobbyDirty = false;
+    /** passport -> last time a "someone is looking for a game" notification was sent */
+    this.seekNotified = new Map();
   }
 
   // Helpers ------------------------------------------------------------------------
@@ -161,6 +165,7 @@ export class ChessService {
       }
       if (!list.length) this.queues.delete(key);
     }
+    if (removed) this.lobbyDirty = true;
     return removed;
   }
 
@@ -170,6 +175,47 @@ export class ChessService {
       if (q) return { tc: q.tc, since: q.since };
     }
     return null;
+  }
+
+  // Lobby: with few players online, two people waiting in different time controls never meet.
+  // Everyone using the app sees every open seek and can take one with a single tap.
+
+  /** Open seeks, oldest first: the player who has waited longest is the one to show. */
+  lobby() {
+    const seeks = [];
+    for (const list of this.queues.values()) {
+      for (const q of list) {
+        if (!this.isOnline(q.passport) || this.playerGame.has(q.passport)) continue;
+        seeks.push({ username: (this.profiles.get(q.passport) ?? q.profile).username, tc: q.tc, since: q.since });
+      }
+    }
+    seeks.sort((a, b) => a.since - b.since);
+    let players = 0;
+    for (const p of this.profiles.keys()) if (this.isOnline(p)) players++;
+    return { seeks: seeks.slice(0, 20), players };
+  }
+
+  broadcastLobby() {
+    const data = this.lobby();
+    for (const p of this.profiles.keys()) if (this.isOnline(p)) this.push(p, 'lobby', data);
+  }
+
+  /** Phone notification to idle app users when someone starts looking. Returns how many were told. */
+  notifySeek(passport, me, tc) {
+    if ([false, 0, 'false'].includes(this.cfg.seekNotifications)) return 0;
+    const cooldown = Math.max(0, this.cfg.seekNotifyCooldownSeconds ?? 300) * 1000;
+    const now = this.now();
+    let told = 0;
+    for (const p of this.profiles.keys()) {
+      if (p === passport || !this.isOnline(p) || this.playerGame.has(p) || this.queueOf(p)) continue;
+      const last = this.seekNotified.get(p);
+      if (last !== undefined && now - last < cooldown) continue;
+      this.seekNotified.set(p, now);
+      const l = this.localeOf(p);
+      this.notify(p, msg(l, 'title'), msg(l, 'seek', { name: me.username, tc: tcText(l, tc) }));
+      told++;
+    }
+    return told;
   }
 
   /** Called on every request: keeps presence fresh and restores a dropped player. */
@@ -210,7 +256,10 @@ export class ChessService {
   async bootstrap({ passport, data = {} }) {
     this.setLocale(passport, data.locale);
     this.touch(passport);
+    const known = this.profiles.has(passport);
     const me = await this.profile(passport);
+    // A new app user changes the player count everyone sees.
+    if (me && !known) this.lobbyDirty = true;
     const gameId = this.playerGame.get(passport);
     const game = gameId ? this.games.get(gameId) : null;
     const incoming = [];
@@ -225,6 +274,7 @@ export class ChessService {
       game: game ? this.snapshot(game, passport) : null,
       queue: this.queueOf(passport),
       challenges: { incoming, outgoing },
+      lobby: this.lobby(),
       serverTime: this.now(),
     };
   }
@@ -236,6 +286,7 @@ export class ChessService {
     try {
       const row = await this.db.createPlayer(passport, username);
       this.profiles.set(passport, row);
+      this.lobbyDirty = true;
       return { ok: true, me: this.publicProfile(row) };
     } catch (err) {
       if (err?.code === 'ER_DUP_PASSPORT') return fail('already_registered');
@@ -267,6 +318,7 @@ export class ChessService {
       list.splice(list.indexOf(opponent), 1);
       if (!list.length) this.queues.delete(key);
       this.removeFromQueues(opponent.passport);
+      this.lobbyDirty = true;
       const oppProfile = this.profiles.get(opponent.passport) ?? opponent.profile;
       const mine = Math.random() < 0.5;
       this.startGame(mine ? passport : opponent.passport, mine ? opponent.passport : passport, tc, mine ? me : oppProfile, mine ? oppProfile : me);
@@ -275,8 +327,10 @@ export class ChessService {
     const entry = { passport, profile: me, tc, since: this.now() };
     list.push(entry);
     this.queues.set(key, list);
+    this.lobbyDirty = true;
+    const notified = this.notifySeek(passport, me, tc);
     this.push(passport, 'queue:status', { queue: { tc, since: entry.since } });
-    return { ok: true, matched: false, queue: { tc, since: entry.since } };
+    return { ok: true, matched: false, queue: { tc, since: entry.since }, notified };
   }
 
   async queueLeave({ passport }) {
@@ -824,8 +878,9 @@ export class ChessService {
     const gameId = this.playerGame.get(passport);
     const game = gameId && this.games.get(gameId);
     if (!game) {
-      this.profiles.delete(passport);
+      if (this.profiles.delete(passport)) this.lobbyDirty = true;
       this.locales.delete(passport);
+      this.seekNotified.delete(passport);
       return;
     }
     const color = this.colorOf(game, passport);
@@ -843,7 +898,11 @@ export class ChessService {
       if (this.playerGame.has(passport) || this.isOnline(passport)) continue;
       this.profiles.delete(passport);
       this.locales.delete(passport);
+      this.lobbyDirty = true;
     }
+    for (const passport of this.seekNotified.keys()) if (!this.profiles.has(passport)) this.seekNotified.delete(passport);
+    // Seeks of players that vanished without a disconnect event.
+    for (const list of this.queues.values()) for (const q of [...list]) if (!this.isOnline(q.passport)) this.removeFromQueues(q.passport);
     for (const passport of this.locales.keys()) if (!this.profiles.has(passport) && !this.isOnline(passport)) this.locales.delete(passport);
     for (const [key, list] of this.pairGames) {
       const recent = list.filter((t) => now - t < HOUR);
@@ -888,6 +947,10 @@ export class ChessService {
     if (now - this.lastSweep >= SWEEP_INTERVAL) {
       this.lastSweep = now;
       this.sweep(now);
+    }
+    if (this.lobbyDirty) {
+      this.lobbyDirty = false;
+      this.broadcastLobby();
     }
     if (now - this.lastPrune >= HOUR) {
       this.lastPrune = now;

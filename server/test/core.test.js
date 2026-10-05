@@ -445,3 +445,53 @@ test('disconnect outside a game drops cached profile and locale', async () => {
   assert.equal(svc.profiles.has(1), false);
   assert.equal(svc.locales.has(1), false);
 });
+
+test('lobby shows open seeks to every app user and clears when matched', async () => {
+  await registered();
+  await call('queue:join', 1, { tc: { base: 180, inc: 2 } });
+  await svc.tick();
+  const lobby = last(3, 'lobby');
+  assert.deepEqual(lobby.seeks.map((s) => [s.username, s.tc.base, s.tc.inc]), [['Alice', 180, 2]]);
+  assert.equal(lobby.players, 3);
+  assert.equal((await call('bootstrap', 2)).lobby.seeks.length, 1);
+
+  // Taking the seek from the lobby is just joining that time control.
+  assert.equal((await call('queue:join', 3, { tc: { base: 180, inc: 2 } })).matched, true);
+  await svc.tick();
+  assert.deepEqual(last(2, 'lobby').seeks, []);
+});
+
+test('lobby drops seeks of players who went offline', async () => {
+  await registered();
+  await call('queue:join', 1, { tc: { base: 300, inc: 0 } });
+  online.delete(1);
+  assert.deepEqual(svc.lobby().seeks, []);
+  svc.onDisconnect(1);
+  await svc.tick();
+  assert.deepEqual(last(2, 'lobby').seeks, []);
+  assert.equal(last(2, 'lobby').players, 2);
+});
+
+test('a new seek notifies idle app users once per cooldown', async () => {
+  await registered();
+  assert.equal((await call('queue:join', 3, { tc: { base: 600, inc: 0 } })).notified, 2);
+  assert.match(notes.find((n) => n.passport === 2).content, /Carol/);
+  clock += 301_000;
+  notes = [];
+  // Bob is idle; Carol is already searching herself, so only Bob hears about Alice.
+  assert.equal((await call('queue:join', 1, { tc: { base: 180, inc: 0 } })).notified, 1);
+  assert.deepEqual(notes.map((n) => n.passport), [2]);
+
+  await call('queue:leave', 1);
+  assert.equal((await call('queue:join', 1, { tc: { base: 180, inc: 0 } })).notified, 0);
+  clock += 301_000;
+  await call('queue:leave', 1);
+  assert.equal((await call('queue:join', 1, { tc: { base: 180, inc: 0 } })).notified, 1);
+});
+
+test('seek notifications can be turned off', async () => {
+  setup({ ...config, seekNotifications: false });
+  await registered();
+  assert.equal((await call('queue:join', 1, { tc: { base: 180, inc: 0 } })).notified, 0);
+  assert.equal(notes.length, 0);
+});
