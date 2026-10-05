@@ -98,7 +98,6 @@ const en = {
     newGame: 'New game',
     continues: 'Chat with {name} is still open',
     closedBy: '{name} closed the chat',
-    notSaved: 'Nothing is saved. Messages live only on your phone and vanish when you close the app.',
     empty: 'Say hi to {name}',
     placeholder: 'Message',
     send: 'Send',

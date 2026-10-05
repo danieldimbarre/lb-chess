@@ -45,13 +45,9 @@ const time = (at: number) => new Date(at).toLocaleTimeString(locale.value === 'p
 
 <template>
   <div class="flex h-[min(30rem,62vh)] flex-col px-4 pb-3">
-    <div class="flex items-center gap-2 pt-2">
+    <div class="flex items-center gap-2 pb-2.5 pt-2">
       <Icon name="chat" :size="20" class="text-green" />
       <span class="flex-1 truncate font-display text-lg font-extrabold">{{ opponent }}</span>
-    </div>
-    <div class="flex items-center gap-1.5 pb-2 text-[0.72rem] font-semibold text-muted">
-      <Icon name="eye" :size="13" class="shrink-0" />
-      <span>{{ t('chat.notSaved') }}</span>
     </div>
 
     <div ref="list" class="min-h-0 flex-1 overflow-y-auto rounded-xl bg-bg p-2.5">

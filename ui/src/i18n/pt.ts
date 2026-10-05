@@ -100,7 +100,6 @@ const pt: Messages = {
     newGame: 'Nova partida',
     continues: 'Chat com {name} continua aberto',
     closedBy: '{name} encerrou o chat',
-    notSaved: 'Nada é salvo. As mensagens ficam só no seu celular e somem ao fechar o app.',
     empty: 'Diga oi para {name}',
     placeholder: 'Mensagem',
     send: 'Enviar',
