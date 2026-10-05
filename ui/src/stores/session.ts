@@ -17,8 +17,10 @@ export const session = reactive({
 
 export const serverNow = () => Date.now() + session.offset;
 
-/** Other players waiting for a game right now, longest wait first. */
-export const openSeeks = computed(() => session.lobby.seeks.filter((s) => s.username !== session.me?.username));
+/** Other players waiting for a game right now, longest wait first. Empty mid-game: the server would refuse to pair. */
+export const openSeeks = computed(() =>
+  session.game?.status === 'playing' ? [] : session.lobby.seeks.filter((s) => s.username !== session.me?.username),
+);
 
 /** How many players are waiting in exactly this time control. */
 export const waitingIn = (tc: TimeControl) => openSeeks.value.filter((s) => s.tc.base === tc.base && s.tc.inc === tc.inc).length;

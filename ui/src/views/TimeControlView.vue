@@ -6,6 +6,7 @@ import Icon from '../components/Icon.vue';
 import { TC_CATEGORIES, prefs, tcLabel, sameTc, tcCategory, challengeTc, tcKey } from '../lib/timeControls';
 import { back } from '../stores/router';
 import { openSeeks, waitingIn } from '../stores/session';
+import { joinQueue } from '../stores/online';
 import type { TimeControl } from '../types';
 
 const props = defineProps<{ /** Where to store the pick: online prefs (default) or a callback key. */ target?: 'online' | 'challenge' }>();
@@ -35,6 +36,12 @@ const live = computed(() => {
 });
 const waiting = (tc: TimeControl) => (emitTarget === 'online' ? waitingIn(tc) : 0);
 
+/** A live tile starts the search right away: someone already waits there, so the game begins instantly. */
+function playNow(tc: TimeControl) {
+  prefs.tc = tc;
+  joinQueue(tc);
+}
+
 function pick(tc: TimeControl) {
   if (emitTarget === 'challenge') challengeTc.value = tc;
   else prefs.tc = tc;
@@ -57,7 +64,7 @@ function pick(tc: TimeControl) {
             v-for="l in live"
             :key="tcKey(l.tc)"
             class="tap flex h-14 flex-col items-center justify-center rounded-lg bg-green/15 leading-tight ring-1 ring-green/40"
-            @click="pick(l.tc)"
+            @click="playNow(l.tc)"
           >
             <span class="flex items-center gap-1 text-[0.95rem] font-bold">
               <Icon :name="tcCategory(l.tc).icon" :size="14" :style="{ color: tcCategory(l.tc).color }" />{{ tcLabel(l.tc) }}
