@@ -66,6 +66,8 @@ export class ChessService {
     this.lobbyDirty = false;
     /** passport -> last time a "someone is looking for a game" notification was sent */
     this.seekNotified = new Map();
+    /** passports that turned on "notify me when someone looks for a game" in the app (off by default) */
+    this.seekAlerts = new Set();
   }
 
   // Helpers ------------------------------------------------------------------------
@@ -203,14 +205,20 @@ export class ChessService {
     for (const p of this.profiles.keys()) if (this.isOnline(p)) this.push(p, 'lobby', data);
   }
 
-  /** Phone notification to idle app users when someone starts looking. Returns how many were told. */
+  /** The player's app setting, reported on bootstrap and whenever it changes. */
+  setSeekAlerts(passport, on) {
+    if (on === true) this.seekAlerts.add(passport);
+    else if (on === false) this.seekAlerts.delete(passport);
+  }
+
+  /** Phone notification to idle app users who opted in, when someone starts looking. Returns how many were told. */
   notifySeek(passport, me, tc) {
     if ([false, 0, 'false'].includes(this.cfg.seekNotifications)) return 0;
     const cooldown = Math.max(0, this.cfg.seekNotifyCooldownSeconds ?? 300) * 1000;
     const now = this.now();
     let told = 0;
     for (const p of this.profiles.keys()) {
-      if (p === passport || !this.isOnline(p) || this.playerGame.has(p) || this.queueOf(p)) continue;
+      if (p === passport || !this.seekAlerts.has(p) || !this.isOnline(p) || this.playerGame.has(p) || this.queueOf(p)) continue;
       const last = this.seekNotified.get(p);
       if (last !== undefined && now - last < cooldown) continue;
       this.seekNotified.set(p, now);
@@ -258,6 +266,7 @@ export class ChessService {
 
   async bootstrap({ passport, data = {} }) {
     this.setLocale(passport, data.locale);
+    this.setSeekAlerts(passport, data.notifySeeks);
     this.touch(passport);
     const known = this.profiles.has(passport);
     const me = await this.profile(passport);
@@ -992,6 +1001,7 @@ export class ChessService {
       if (this.profiles.delete(passport)) this.lobbyDirty = true;
       this.locales.delete(passport);
       this.seekNotified.delete(passport);
+      this.seekAlerts.delete(passport);
       return;
     }
     const color = this.colorOf(game, passport);
@@ -1012,6 +1022,7 @@ export class ChessService {
       this.lobbyDirty = true;
     }
     for (const passport of this.seekNotified.keys()) if (!this.profiles.has(passport)) this.seekNotified.delete(passport);
+    for (const passport of this.seekAlerts) if (!this.profiles.has(passport) && !this.isOnline(passport)) this.seekAlerts.delete(passport);
     for (const key of this.chatPairs) if (key.split(':').some((p) => !this.isOnline(Number(p)))) this.chatPairs.delete(key);
     // Seeks of players that vanished without a disconnect event.
     for (const list of this.queues.values()) for (const q of [...list]) if (!this.isOnline(q.passport)) this.removeFromQueues(q.passport);
@@ -1103,6 +1114,10 @@ export class ChessService {
       ping: async () => ({ ok: true, serverTime: this.now() }),
       locale: async ({ passport, data }) => {
         this.setLocale(passport, data.locale);
+        return { ok: true };
+      },
+      prefs: async ({ passport, data }) => {
+        this.setSeekAlerts(passport, data.notifySeeks);
         return { ok: true };
       },
       bootstrap: (ctx) => this.bootstrap(ctx),

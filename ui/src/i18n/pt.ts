@@ -318,6 +318,9 @@ const pt: Messages = {
     figurine: 'Ícones de peças na notação',
     confirmResign: 'Confirmar desistência e abortar',
     sounds: 'Sons',
+    notifications: 'Notificações',
+    notifySeeks: 'Avisar quando alguém procurar partida',
+    notifySeeksHint: 'Receba uma notificação no celular quando um jogador começar a buscar oponente.',
   },
   themes: {
     green: 'Verde',

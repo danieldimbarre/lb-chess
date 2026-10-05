@@ -16,6 +16,8 @@ export interface Settings {
   highlightLast: boolean;
   figurine: boolean;
   confirmResign: boolean;
+  /** Phone notification when another player starts looking for a game. */
+  notifySeeks: boolean;
 }
 
 export const boardThemes: Record<BoardThemeId, { name: string; light: string; dark: string }> = {
@@ -40,6 +42,7 @@ const defaults: Settings = {
   highlightLast: true,
   figurine: true,
   confirmResign: true,
+  notifySeeks: false,
 };
 
 const KEY = 'lb-chess:settings';

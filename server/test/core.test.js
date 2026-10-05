@@ -472,8 +472,13 @@ test('lobby drops seeks of players who went offline', async () => {
   assert.equal(last(2, 'lobby').players, 2);
 });
 
+const optIn = async (...passports) => {
+  for (const p of passports) await call('prefs', p, { notifySeeks: true });
+};
+
 test('a new seek notifies idle app users once per cooldown', async () => {
   await registered();
+  await optIn(1, 2, 3);
   assert.equal((await call('queue:join', 3, { tc: { base: 600, inc: 0 } })).notified, 2);
   assert.match(notes.find((n) => n.passport === 2).content, /Carol/);
   clock += 301_000;
@@ -489,9 +494,28 @@ test('a new seek notifies idle app users once per cooldown', async () => {
   assert.equal((await call('queue:join', 1, { tc: { base: 180, inc: 0 } })).notified, 1);
 });
 
-test('seek notifications can be turned off', async () => {
+test('seek notifications are off until the player turns them on in the app', async () => {
+  await registered();
+  assert.equal((await call('queue:join', 1, { tc: { base: 180, inc: 0 } })).notified, 0);
+  await call('queue:leave', 1);
+
+  // Bob turns the option on when the app starts, Carol from the settings screen.
+  await call('bootstrap', 2, { notifySeeks: true });
+  await call('prefs', 3, { notifySeeks: true });
+  assert.equal((await call('queue:join', 1, { tc: { base: 300, inc: 0 } })).notified, 2);
+
+  // Turning it off again stops them.
+  await call('queue:leave', 1);
+  clock += 301_000;
+  await call('prefs', 2, { notifySeeks: false });
+  assert.equal((await call('queue:join', 1, { tc: { base: 300, inc: 0 } })).notified, 1);
+  assert.equal(notes.at(-1).passport, 3);
+});
+
+test('seek notifications can be turned off server-wide', async () => {
   setup({ ...config, seekNotifications: false });
   await registered();
+  await optIn(2, 3);
   assert.equal((await call('queue:join', 1, { tc: { base: 180, inc: 0 } })).notified, 0);
   assert.equal(notes.length, 0);
 });

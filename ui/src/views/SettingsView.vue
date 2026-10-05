@@ -116,6 +116,17 @@ function setFlag(key: keyof Settings, value: boolean) {
           <Toggle :model-value="!!settings[item.key]" @update:model-value="(v: boolean) => setFlag(item.key, v)" />
         </label>
       </div>
+
+      <div class="section-title">{{ t('settings.notifications') }}</div>
+      <div class="mx-4 mb-6 overflow-hidden rounded-xl bg-surface">
+        <label class="flex items-center gap-3 px-4 py-3">
+          <span class="flex-1">
+            <span class="block font-semibold">{{ t('settings.notifySeeks') }}</span>
+            <span class="block text-[0.76rem] text-muted">{{ t('settings.notifySeeksHint') }}</span>
+          </span>
+          <Toggle v-model="settings.notifySeeks" />
+        </label>
+      </div>
     </div>
     <TabBar v-if="tab" />
   </div>

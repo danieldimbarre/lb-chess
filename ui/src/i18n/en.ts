@@ -316,6 +316,9 @@ const en = {
     figurine: 'Piece icons in notation',
     confirmResign: 'Confirm resign & abort',
     sounds: 'Sounds',
+    notifications: 'Notifications',
+    notifySeeks: 'Notify me when someone looks for a game',
+    notifySeeksHint: 'Get a phone notification when a player starts searching for an opponent.',
   },
   themes: {
     green: 'Green',

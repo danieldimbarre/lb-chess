@@ -3660,6 +3660,7 @@
       this.pruning = false;
       this.lobbyDirty = false;
       this.seekNotified = /* @__PURE__ */ new Map();
+      this.seekAlerts = /* @__PURE__ */ new Set();
     }
     // Helpers ------------------------------------------------------------------------
     id(prefix) {
@@ -3778,14 +3779,19 @@
       const data = this.lobby();
       for (const p of this.profiles.keys()) if (this.isOnline(p)) this.push(p, "lobby", data);
     }
-    /** Phone notification to idle app users when someone starts looking. Returns how many were told. */
+    /** The player's app setting, reported on bootstrap and whenever it changes. */
+    setSeekAlerts(passport, on2) {
+      if (on2 === true) this.seekAlerts.add(passport);
+      else if (on2 === false) this.seekAlerts.delete(passport);
+    }
+    /** Phone notification to idle app users who opted in, when someone starts looking. Returns how many were told. */
     notifySeek(passport, me, tc) {
       if ([false, 0, "false"].includes(this.cfg.seekNotifications)) return 0;
       const cooldown = Math.max(0, this.cfg.seekNotifyCooldownSeconds ?? 300) * 1e3;
       const now = this.now();
       let told = 0;
       for (const p of this.profiles.keys()) {
-        if (p === passport || !this.isOnline(p) || this.playerGame.has(p) || this.queueOf(p)) continue;
+        if (p === passport || !this.seekAlerts.has(p) || !this.isOnline(p) || this.playerGame.has(p) || this.queueOf(p)) continue;
         const last = this.seekNotified.get(p);
         if (last !== void 0 && now - last < cooldown) continue;
         this.seekNotified.set(p, now);
@@ -3826,6 +3832,7 @@
     }
     async bootstrap({ passport, data = {} }) {
       this.setLocale(passport, data.locale);
+      this.setSeekAlerts(passport, data.notifySeeks);
       this.touch(passport);
       const known = this.profiles.has(passport);
       const me = await this.profile(passport);
@@ -4467,6 +4474,7 @@
         if (this.profiles.delete(passport)) this.lobbyDirty = true;
         this.locales.delete(passport);
         this.seekNotified.delete(passport);
+        this.seekAlerts.delete(passport);
         return;
       }
       const color = this.colorOf(game, passport);
@@ -4485,6 +4493,7 @@
         this.lobbyDirty = true;
       }
       for (const passport of this.seekNotified.keys()) if (!this.profiles.has(passport)) this.seekNotified.delete(passport);
+      for (const passport of this.seekAlerts) if (!this.profiles.has(passport) && !this.isOnline(passport)) this.seekAlerts.delete(passport);
       for (const key of this.chatPairs) if (key.split(":").some((p) => !this.isOnline(Number(p)))) this.chatPairs.delete(key);
       for (const list of this.queues.values()) for (const q of [...list]) if (!this.isOnline(q.passport)) this.removeFromQueues(q.passport);
       for (const passport of this.locales.keys()) if (!this.profiles.has(passport) && !this.isOnline(passport)) this.locales.delete(passport);
@@ -4568,6 +4577,10 @@
         ping: async () => ({ ok: true, serverTime: this.now() }),
         locale: async ({ passport, data }) => {
           this.setLocale(passport, data.locale);
+          return { ok: true };
+        },
+        prefs: async ({ passport, data }) => {
+          this.setSeekAlerts(passport, data.notifySeeks);
           return { ok: true };
         },
         bootstrap: (ctx) => this.bootstrap(ctx),

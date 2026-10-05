@@ -6,6 +6,7 @@ import { playSound } from '../chess/sounds';
 import { toast, showError } from '../lib/toast';
 import { watch } from 'vue';
 import { locale, t } from '../i18n';
+import { settings } from './settings';
 import type { Bootstrap, ChatState, Challenge, Color, GameSnapshot, Lobby, MoveRecord, Profile, Seek, TimeControl } from '../types';
 
 let installed = false;
@@ -28,7 +29,7 @@ export function applyBootstrap(b: Bootstrap) {
 }
 
 export async function bootstrap(): Promise<boolean> {
-  const b = await request<Bootstrap>('bootstrap', { locale: locale.value });
+  const b = await request<Bootstrap>('bootstrap', { locale: locale.value, notifySeeks: settings.notifySeeks });
   if (!b?.ok) return false;
   applyBootstrap(b);
   return true;
@@ -40,6 +41,11 @@ export function installPushHandlers() {
 
   // The server writes phone notifications in the player's language.
   watch(locale, (l) => request('locale', { locale: l }));
+  // The server only sends "someone is looking for a game" notifications to players who opted in.
+  watch(
+    () => settings.notifySeeks,
+    (on) => request('prefs', { notifySeeks: on }),
+  );
 
   onPush('game:start', (snap: GameSnapshot) => {
     syncTime(snap.serverTime);
